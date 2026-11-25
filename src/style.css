@@ -171,7 +171,58 @@ body.rhythm-playing .toolbar.right button:not(#rhythm-tool) { display: none; }
   content: ""; position: absolute; top: 50%; left: 50%; width: 3px; height: 3px; margin: -1.5px; border-radius: 50%;
   box-shadow: 18px 0, -18px 0, 9px 16px, -9px 16px, 9px -16px, -9px -16px;
 }
-.rhythm-streak { position: absolute; left: 4px; top: 29px; color: #fff4f8; text-shadow: 0 1px 3px #5b3d59; font: 700 12px/1 system-ui, sans-serif; }
+.rhythm-streak { position: absolute; left: 0; top: 26px; transform: translateX(-50%); white-space: nowrap; color: #fff4f8; text-shadow: 0 1px 4px #5b3d59; font: 700 13px/1 system-ui, sans-serif; }
+.rhythm-judge {
+  position: absolute; left: 0; top: -40px; transform: translateX(-50%); white-space: nowrap;
+  font: 800 13px/1 system-ui, sans-serif; letter-spacing: .08em; pointer-events: none;
+  color: #fff6fa; text-shadow: 0 1px 6px rgba(91, 61, 89, .75);
+}
+.rhythm-judge[data-grade="perfect"] { color: #ffe79a; text-shadow: 0 1px 8px rgba(155, 80, 120, .85); }
+.rhythm-judge[data-grade="good"] { color: #e9d9ff; }
+.rhythm-judge[data-grade="miss"] { color: #ffb3c4; }
+.rhythm-beat-tick {
+  position: absolute; left: -1px; top: -7px; width: 2px; height: 14px; border-radius: 1px;
+  background: rgba(255, 245, 250, .42); pointer-events: none;
+}
+.rhythm-beat-tick.bar { top: -11px; height: 22px; background: rgba(255, 245, 250, .72); }
+.rhythm-progress {
+  position: fixed; left: 0; right: 0; top: 0; height: 3px; background: rgba(120, 90, 130, .14); z-index: 6;
+}
+.rhythm-progress i {
+  display: block; width: 100%; height: 100%; transform-origin: left center; transform: scaleX(0);
+  background: linear-gradient(90deg, #f3a6c4, #b98be0);
+}
+.rhythm-hint {
+  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+  padding: 7px 14px; border-radius: 999px; font-size: 12px; letter-spacing: .04em;
+  background: rgba(255, 250, 252, .86); color: var(--ink); border: 1px solid var(--chip-border);
+  box-shadow: 0 4px 16px rgba(80, 50, 90, .12); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+.rhythm-hud {
+  position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 6;
+  display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+  background: var(--chip); border: 1px solid var(--chip-border); color: var(--ink);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 12px rgba(80, 50, 90, .09); font-size: 12px; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rhythm-hud[hidden] { display: none; }
+.rhythm-hud-sep { opacity: .35; }
+.rhythm-hud-acc { font-weight: 700; color: var(--chip-active); }
+.rhythm-sync { display: inline-flex; align-items: center; gap: 4px; }
+.rhythm-sync em { font-style: normal; min-width: 38px; text-align: center; opacity: .82; }
+.rhythm-sync button {
+  width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 1px solid var(--chip-border);
+  background: rgba(255, 255, 255, .85); color: var(--ink); font: 700 12px/1 system-ui, sans-serif;
+  cursor: pointer; display: grid; place-items: center;
+}
+.rhythm-sync button:hover { background: var(--chip-active); color: var(--chip-active-ink); border-color: transparent; }
+.rhythm-rank { font-size: 17px; font-weight: 700; letter-spacing: .04em; color: var(--chip-active); margin-bottom: 2px; }
+.rhythm-breakdown { font-size: 12px; opacity: .85; }
+@media (max-width: 520px) {
+  .rhythm-hud { top: 72px; padding: 5px 10px; font-size: 11px; gap: 6px; }
+}
 .rhythm-touch {
   position: fixed; width: 28px; height: 28px; margin: -14px; z-index: 4;
   border: 2px solid #fff1f6; border-radius: 50%; box-shadow: 0 0 5px rgba(149, 116, 152, .55); pointer-events: none;

@@ -19,6 +19,7 @@ const PULL_SINGLE = 0.075;
 const PULL_DOUBLE = 0.048;
 const CUP_PUSH = 0.035;
 const PULL_RHYTHM = 0.12; // 音游里的长按拉得开一些，参考站同款
+const RHYTHM_HOLD_RAW = 0.115; // 音游长按不拖动时的基础拉力（经橡皮筋映射后约 82% 上限）
 
 // ---------- 加载界面 ----------
 const app = document.querySelector('#app');
@@ -312,9 +313,10 @@ const rhythm = createRhythm({
     const r = stage.getBoundingClientRect();
     return { x: r.left + ((_anchor.x + 1) / 2) * r.width, y: r.top + ((1 - _anchor.y) / 2) * r.height };
   },
+  sfx,
   onToggle(on) {
     endHold(false);
-    sfx.quiet = on; // 只听音乐
+    sfx.quiet = on; // 音游进行中关闭常规揉捏音效，改由音游打击反馈出声
     if (on) { modeBeforeRhythm = mode; mode = 'off'; } else mode = modeBeforeRhythm;
   },
   onHoldBroken() { endHold(false); },
@@ -454,15 +456,18 @@ stage.addEventListener('pointerdown', (e) => {
   cupHeld = act === 'cup';
   if (cupHeld) { sfx.cupPress(); cupTime = 0; rubEnergy = 0; rubLevel = 0; lastRubPx.set(e.clientX, e.clientY); }
   jiggleArmed = false;
-  // 音游里的长按：一按下就算在拉（不等拖动），也不出彩蛋
+  // 音游里的长按：一按下就算在拉（不等拖动），也不出彩蛋；清掉上一记戳脸的残留表情
   pulling = rhythm.active; egg = null;
+  if (rhythm.active) pokeUntil = -Infinity;
   try { stage.setPointerCapture(e.pointerId); } catch { /* 合成事件 */ }
   pressPx.set(e.clientX, e.clientY);
   // 拉脸：抓取点固定在脸颊肉上，只取高度；捧脸：就在按下的位置轻推
   if (cupHeld) grab.set(x, y, z);
   else grab.set(x < 0 ? -0.55 : 0.55, clamp(y, 16.88, 17), 0.24);
   if (!rhythm.active) { delta.set(0, 0, 0); vel.set(0, 0, 0); }
-  target.set(0, 0, 0);
+  // 音游长按即使原地按住不拖动，也自动向外拉开脸颊，触发表情与回弹
+  if (rhythm.active) target.set(Math.sign(grab.x) * PT * PULL_RHYTHM * Math.tanh(RHYTHM_HOLD_RAW / 0.1), 0, 0);
+  else target.set(0, 0, 0);
   camera.getWorldDirection(dragPlane.normal);
   dragPlane.setFromNormalAndCoplanarPoint(dragPlane.normal, hit.point);
   dragStart.copy(hit.point);
@@ -505,6 +510,7 @@ stage.addEventListener('pointermove', (e) => {
   target.y *= rhythm.active ? 1.12 : 0.65;
   if (rhythm.active) target.x += s * Math.abs(target.y) * 0.36;
   target.multiplyScalar(smoothstep(px, 3, 8)); // 几像素的死区，防手抖
+  if (rhythm.active) target.x += s * PT * RHYTHM_HOLD_RAW; // 音游长按叠加基础自动拉力，避免微抖把目标清零
   const a = target.length();
   const limit = PT * pullLimit();
   if (a > 1e-4 && !pulling) {
@@ -524,6 +530,7 @@ function endHold(ok, ts = performance.now()) {
   if (holdId === null) return;
   const id = holdId;
   holdId = null;
+  keyHoldCode = null;
   if (rhythm.active) rhythm.release(ok, ts);
   try { if (stage.hasPointerCapture(id)) stage.releasePointerCapture(id); } catch { /* 合成事件 */ }
   if (cupHeld) {
@@ -568,6 +575,40 @@ function touchRing(e) {
   ring.animate([{ opacity: 0.9, transform: 'scale(.55)' }, { opacity: 0, transform: 'scale(1.55)' }], { duration: 210, easing: 'ease-out' }).onfinish = () => ring.remove();
 }
 for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) stage.addEventListener(type, release);
+
+// 音游键盘支持：空格 / D / F / J / K 均可点按与长按
+const RHYTHM_KEYS = new Set(['Space', 'KeyD', 'KeyF', 'KeyJ', 'KeyK']);
+let keyHoldCode = null;
+window.addEventListener('keydown', (e) => {
+  if (!rhythm.active || !rhythm.playing || e.repeat || !RHYTHM_KEYS.has(e.code)) return;
+  if (holdId !== null) return;
+  e.preventDefault();
+  sfx.ensureContext();
+  const hit = rhythmHit();
+  const { x, y, z } = hit.ref;
+  const act = rhythm.press(e);
+  if (!act) { pokes.tap(hit.ref.clone(), 0.55); return; }
+  if (act === 'poke') {
+    pokeUntil = performance.now() + 550;
+    pokes.tap(new THREE.Vector3((Math.sign(x) || 1) * clamp(Math.abs(x), 0.3, 0.82), clamp(y, 16.87, 17.3), z), 1.5);
+    return;
+  }
+  keyHoldCode = e.code;
+  holdId = 'key';
+  pullSides = 1;
+  cupHeld = false;
+  jiggleArmed = false;
+  pulling = true; egg = null;
+  pokeUntil = -Infinity;
+  grab.set(x < 0 ? -0.55 : 0.55, clamp(y, 16.88, 17), 0.24);
+  target.set(Math.sign(grab.x) * PT * PULL_RHYTHM * Math.tanh(RHYTHM_HOLD_RAW / 0.1), 0, 0);
+});
+window.addEventListener('keyup', (e) => {
+  if (keyHoldCode && e.code === keyHoldCode) {
+    keyHoldCode = null;
+    if (holdId === 'key') endHold(true, e.timeStamp);
+  }
+});
 
 let hoverEvent = null;
 function updateHoverCursor() {
@@ -646,7 +687,7 @@ function updatePull(dt, now) {
     if (on && warm > cur) { uniforms.uBlushHeight.value[s] = grab.y; uniforms.uPullBlush.value[s] = damp(cur, warm, 9, dt); }
     else if (now >= blushHold[s]) uniforms.uPullBlush.value[s] = damp(cur, 0, 0.9, dt);
   }
-  pullAmount = damp(pullAmount, r, holding ? 22 : 14, dt);
+  pullAmount = damp(pullAmount, r, holding ? (rhythm.active ? 28 : 22) : 14, dt);
   return r;
 }
 
@@ -678,15 +719,18 @@ function updateFace(dt, now, r) {
   const calm = (1 - enjoyAmt) * (1 - dizzyAmt);
   const ag = smoothstep(afterglow, 0, 0.45);
 
+  // 音游长按：采用设计图验证的"眨眼吐舌"（ウィンク + ぺろっ + にこり）+ 淡淡脸红 + 微微歪头
+  const rh = rhythm.active ? h : 0;
+
   // 捧脸 / 拉脸共用的"脸被托住"程度；害羞时更红
   const Es = Math.max(cupAmount, h);
   uniforms.uCup.value = Es * (1 + 0.6 * shyAmt);
-  const EsSurprise = Math.max(cupAmount * (1 - 0.75 * shyAmt) * calm, h); // 惊讶慢慢褪掉
-  const EsMouth = Math.max(cupAmount * (1 - 0.45 * enjoyAmt), h);
+  const EsSurprise = Math.max(cupAmount * (1 - 0.75 * shyAmt) * calm, h * (1 - rh)); // 惊讶慢慢褪掉
+  const EsMouth = Math.max(cupAmount * (1 - 0.45 * enjoyAmt), h * (1 - rh)); // 音游长按让出嘴型给 ぺろっ，避免挤坏舌头
 
   // --- 头颈：待机轻微摇摆；被捧着、被拉时低头，单手拉时往被拉的一侧歪一点 ---
   const lean = Math.max(cupAmount, h * 0.55) + 0.2 * sulk;
-  const pullLeanTarget = pullSides === 1 ? -Math.sign(grab.x) * r : 0;
+  const pullLeanTarget = pullSides === 1 ? -Math.sign(grab.x) * r * (rhythm.active ? 1.45 : 1) : 0;
   if (!pulling && !cupHeld) motionTime += dt;
   const u = motionTime;
   pullLean = damp(pullLean, pullLeanTarget, 9, dt);
@@ -707,7 +751,7 @@ function updateFace(dt, now, r) {
   neckBone.quaternion.multiply(_rq.setFromEuler(_e));
 
   // --- 眨眼 ---
-  const suppressBlink = pulling || pokeFace > 0.02 || enjoyAmt > 0.3 || ag > 0.05;
+  const suppressBlink = pulling || rh > 0.05 || pokeFace > 0.02 || enjoyAmt > 0.3 || ag > 0.05;
   let blinkValue;
   if (suppressBlink) { blink.update(dt, false, true); blinkValue = damp(shown.get('まばたき') ?? 0, 0, 40, dt); }
   else blinkValue = blink.update(dt, cupHeld, false); // 被捧着时眨眼更勤、偶尔连眨
@@ -750,20 +794,27 @@ function updateFace(dt, now, r) {
   for (const b of eyeBones) b.quaternion.multiply(_rq);
   const left = pullSides === 2 || grab.x >= 0 ? h : 0;
   const right = pullSides === 2 || grab.x < 0 ? h : 0;
-  add('左口横広げ', left * 0.54);
-  add('右口横広げ', right * 0.54);
-  // 拉扯时弯眼笑；彩蛋时换成睁眼的无奈表情
-  add('笑い', h * (pullSides === 2 ? 1 : 0.9) * (1 - ef));
+  // 音游长按使用干净的"眨眼吐舌"（不叠加口横広げ，避免舌头错位）
+  add('左口横広げ', left * 0.54 * (1 - rh));
+  add('右口横広げ', right * 0.54 * (1 - rh));
+  if (rhythm.active) {
+    add('ウィンク', rh * 0.95);
+    add('ぺろっ', rh * 0.9);
+    add('にこり', rh * 0.45);
+    add('照れ', rh * 0.45);
+  } else {
+    add('笑い', h * (pullSides === 2 ? 1 : 0.9) * (1 - ef));
+  }
   if (shownEgg) for (const [k, v] of Object.entries(shownEgg.morphs)) add(k, v * ef);
   // 戳：弯眼笑一下，之后被戳的一侧放松、嘴角上扬
   const [reactR, reactL] = pokes.reactions; // 槽位 0 = x<0 = 右脸
-  add('笑い', 0.85 * pf);
-  add('なごみR', reactR * 0.28 * open * (1 - pf));
-  add('なごみL', reactL * 0.28 * open * (1 - pf));
+  add('笑い', 0.85 * pf * (1 - rh));
+  add('なごみR', reactR * 0.28 * open * (1 - pf) * (1 - rh));
+  add('なごみL', reactL * 0.28 * open * (1 - pf) * (1 - rh));
   const [smileR, smileL] = pokes.smiles;
   const smile = Math.max(smileR, smileL);
-  add('右口角上げ', smile * 0.62 + smileR * 0.58 + 0.25 * pf);
-  add('左口角上げ', smile * 0.62 + smileL * 0.58 + 0.25 * pf);
+  add('右口角上げ', (smile * 0.62 + smileR * 0.58 + 0.25 * pf) * (1 - rh));
+  add('左口角上げ', (smile * 0.62 + smileL * 0.58 + 0.25 * pf) * (1 - rh));
   const Z = Math.min(1, 0.65 * Math.max(reactR, reactL) + 0.85 * smile);
   add('左困る', left * h * 0.045 + (0.34 * Z + 0.27 * reactL) * 0.35);
   add('右困る', right * h * 0.045 + (0.34 * Z + 0.27 * reactR) * 0.35);

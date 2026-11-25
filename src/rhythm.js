@@ -1,95 +1,199 @@
 /**
- * 音游：玩法照参考站。
- * 一条轨道从右脸颊往画面右侧延伸，音符从右往左滑到脸颊上的圆圈：
- *   - 圆音符 = 点按（戳脸）
- *   - 长条音符 = 按住（单手拉住脸），到尾巴时松手
- * 判定窗口：按下 ±0.22s，松手 ±0.29s；±0.09s 内算"精准"（爆开时多一圈小点）。
- * 曲子放完，弹出结算卡片。
+ * 音游引擎（标准音游时钟 + 简单易上手手感）：
+ * - 使用 Web Audio API 解码并按 AudioContext 时钟精确调度播放（自动补偿 outputLatency），
+ *   彻底解决 HTMLAudioElement 起播延迟与 currentTime 跳变导致的"没卡上点"问题。
+ * - 判定分级：PERFECT（±80ms）/ GOOD（±175ms）/ MISS，长按松手窗口更宽松（±110ms / ±250ms）。
+ * - 视觉卡点增强：判定圈随 160 BPM 节拍脉动、轨道上显示每 2 拍节拍刻度、实时弹出判定文字与准确度，
+ *   并提供 ±150ms 音频延迟微调（适配蓝牙耳机等高延迟设备）。
  */
-import { CHART, SONG_URL } from './rhythmChart.js';
+import { CHART, SONG_URL, BEAT_OFFSET, BEAT_SEC, SONG_END } from './rhythmChart.js';
 
-const PRESS_WINDOW = 0.22;
-const RELEASE_WINDOW = 0.29;
-const PRECISE = 0.09;
-const LEAD_IN = 2.0;        // 开场先让音符滑一会儿再放歌，第一个音符在 0.5s，太赶
+const PERFECT_WINDOW = 0.080;
+const GOOD_WINDOW = 0.175;
+const EARLY_IGNORE = 0.250;     // 超过 250ms 提前按不算错，仅轻戳脸颊
+const RELEASE_PERFECT = 0.110;
+const RELEASE_GOOD = 0.250;
+const LEAD_IN = 2.0;            // 2 秒预备滑动，让第一拍从容进场
+const TRAVEL_BEATS = 4;         // 轨道全长固定展示 4 拍（1.5 秒 = 1 小节），速度恒定易读
 const SYNC_KEY = 'daniya.rhythm-sync-ms';
 
-class SongPlayer {
-  constructor(url) { this.url = url; this.audio = null; this.leadStart = 0; this.started = false; }
-  load({ onProgress, onReady, onEnded, onError }) {
+/** 基于 Web Audio API 的高精度播放器，支持流式加载进度和解码缓存 */
+class WebAudioSongPlayer {
+  constructor(url, getCtx) {
+    this.url = url;
+    this.getCtx = getCtx;
+    this.buffer = null;
+    this.source = null;
+    this.gain = null;
+    this.abort = null;
+    this.startCtxTime = 0;
+    this.ended = false;
+    this.onEnded = null;
+  }
+
+  async load({ onProgress, onReady, onEnded, onError }) {
     this.stop();
-    const a = new Audio();
-    this.audio = a;
-    a.preload = 'auto';
-    const progress = () => {
-      if (!a.duration) return onProgress(0);
-      let end = 0;
-      for (let i = 0; i < a.buffered.length; i++) end = Math.max(end, a.buffered.end(i));
-      onProgress(Math.min(1, end / a.duration));
-    };
-    a.onprogress = progress;
-    a.oncanplaythrough = () => { a.oncanplaythrough = null; progress(); onReady(); };
-    a.onended = onEnded;
-    a.onerror = onError;
-    a.src = this.url;
-    a.load();
+    this.onEnded = onEnded;
+    this.ended = false;
+    const ctx = this.getCtx();
+    if (!ctx) { onError?.(); return; }
+
+    if (this.buffer) {
+      onProgress?.(1);
+      onReady?.();
+      return;
+    }
+
+    const ctrl = new AbortController();
+    this.abort = ctrl;
+    try {
+      const res = await fetch(this.url, { signal: ctrl.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const total = Number(res.headers.get('content-length')) || 0;
+      let raw;
+      if (res.body && total > 0) {
+        const reader = res.body.getReader();
+        const chunks = [];
+        let loaded = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          loaded += value.byteLength;
+          onProgress?.(Math.min(0.92, (loaded / total) * 0.92));
+        }
+        const merged = new Uint8Array(loaded);
+        let offset = 0;
+        for (const c of chunks) { merged.set(c, offset); offset += c.byteLength; }
+        raw = merged.buffer;
+      } else {
+        onProgress?.(0.5);
+        raw = await res.arrayBuffer();
+      }
+      if (ctrl.signal.aborted) return;
+      onProgress?.(0.96);
+      this.buffer = await ctx.decodeAudioData(raw);
+      if (ctrl.signal.aborted) return;
+      onProgress?.(1);
+      onReady?.();
+    } catch (err) {
+      if (ctrl.signal.aborted) return;
+      console.error('[rhythm] audio load failed:', err);
+      onError?.();
+    } finally {
+      if (this.abort === ctrl) this.abort = null;
+    }
   }
-  /** 开始倒计时：LEAD_IN 秒后真正放歌 */
+
+  /** 按 AudioContext 绝对时钟预约在 LEAD_IN 秒后从 0.000s 精准起播 */
   begin() {
-    this.leadStart = performance.now();
-    this.started = false;
+    this.stopSource();
+    const ctx = this.getCtx();
+    if (!ctx || !this.buffer) return;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const src = ctx.createBufferSource();
+    src.buffer = this.buffer;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.82;
+    src.connect(gain).connect(ctx.destination);
+
+    this.startCtxTime = ctx.currentTime + LEAD_IN;
+    this.ended = false;
+    src.onended = () => {
+      if (this.source !== src) return;
+      this.ended = true;
+      this.onEnded?.();
+    };
+    src.start(this.startCtxTime, 0);
+    this.source = src;
+    this.gain = gain;
   }
-  update() {
-    const a = this.audio;
-    if (!a || this.started) return;
-    if (performance.now() - this.leadStart >= LEAD_IN * 1000) {
-      this.started = true;
-      a.currentTime = 0;
-      a.play().catch(() => a.onerror?.());
-    }
-  }
-  /** 歌曲时间（秒）。ts = 事件的时间戳，用来扣掉事件到处理之间的延迟 */
+
+  /** 当前听觉时刻（秒），已扣除硬件输出延迟与事件排队延迟 */
   time(ts = performance.now()) {
-    const a = this.audio;
-    if (!a) return 0;
-    const lag = Math.max(0, performance.now() - ts) / 1000;
-    if (!this.started || (a.currentTime === 0 && a.paused)) {
-      return Math.min(0, (ts - this.leadStart) / 1000 - LEAD_IN);
-    }
-    return a.currentTime - lag;
+    const ctx = this.getCtx();
+    if (!ctx || !this.source) return -LEAD_IN;
+    const lag = Math.min(0.05, Math.max(0, (performance.now() - ts) / 1000));
+    const hwLatency = Math.min(0.15, Math.max(0, (ctx.outputLatency || 0) || (ctx.baseLatency || 0)));
+    return ctx.currentTime - hwLatency - this.startCtxTime - lag;
   }
+
+  get duration() { return this.buffer ? this.buffer.duration : SONG_END; }
+
+  stopSource() {
+    if (this.source) {
+      const src = this.source;
+      this.source = null;
+      src.onended = null;
+      try { src.stop(); } catch { /* 已停 */ }
+      try { src.disconnect(); } catch { /* ignore */ }
+    }
+    if (this.gain) {
+      try { this.gain.disconnect(); } catch { /* ignore */ }
+      this.gain = null;
+    }
+  }
+
   stop() {
-    const a = this.audio;
-    if (!a) return;
-    this.audio = null;
-    a.onprogress = a.oncanplaythrough = a.onended = a.onerror = null;
-    a.pause();
-    a.removeAttribute('src');
-    a.load();
+    if (this.abort) { this.abort.abort(); this.abort = null; }
+    this.stopSource();
+    this.onEnded = null;
   }
 }
 
 /**
  * @param {object} o
+ * @param {HTMLElement} o.root
+ * @param {HTMLButtonElement} o.button
  * @param {() => {x:number,y:number}} o.anchor 右脸颊在屏幕上的位置（CSS 像素）
+ * @param {import('./sfx.js').Sfx} o.sfx
  * @param {(active:boolean) => void} o.onToggle 进入/退出音游
- * @param {() => void} o.onHoldBroken 长按音符被判失败（时间到了还没松手等），需要强制松手
+ * @param {() => void} o.onHoldBroken 长按音符被判失败时强制松手
  */
-export function createRhythm({ root, button, anchor, onToggle, onHoldBroken }) {
+export function createRhythm({ root, button, anchor, sfx, onToggle, onHoldBroken }) {
   const lane = el('div', 'rhythm-lane');
   const track = el('div', 'rhythm-track');
   const targetRing = el('div', 'rhythm-target');
+  const judgeEl = el('div', 'rhythm-judge');
   const streakEl = el('div', 'rhythm-streak');
-  track.append(targetRing, streakEl);
+  track.append(targetRing, judgeEl, streakEl);
   lane.append(track);
+
+  const progressBar = el('div', 'rhythm-progress');
+  const progressFill = document.createElement('i');
+  progressBar.append(progressFill);
+  lane.append(progressBar);
+
+  const hintEl = el('div', 'rhythm-hint');
+  hintEl.textContent = '点按 / 空格 = 戳脸 · 长按 = Wink 拉脸';
+  lane.append(hintEl);
+
   lane.hidden = true;
   const dot = el('i', 'rhythm-pointer-dot');
   dot.hidden = true;
   lane.append(dot);
 
+  // 顶部简洁 HUD（准确度 + 连击 + 延迟微调）
+  const hud = el('div', 'rhythm-hud');
+  hud.innerHTML = `
+    <span class="rhythm-hud-acc">100.0%</span>
+    <span class="rhythm-hud-sep">·</span>
+    <span class="rhythm-hud-combo">0 连击</span>
+    <span class="rhythm-hud-sep">·</span>
+    <span class="rhythm-sync" title="音频延迟微调（蓝牙耳机可调）">
+      <button type="button" data-sync="-10" aria-label="提前 10ms">−</button>
+      <em class="rhythm-sync-val">0ms</em>
+      <button type="button" data-sync="10" aria-label="延后 10ms">+</button>
+    </span>`;
+  hud.hidden = true;
+  const hudAcc = hud.querySelector('.rhythm-hud-acc');
+  const hudCombo = hud.querySelector('.rhythm-hud-combo');
+  const syncValEl = hud.querySelector('.rhythm-sync-val');
+
   const launch = el('div', 'rhythm-launch');
   launch.innerHTML = `
-    <div class="rhythm-buffer"><span>音乐加载中</span><span class="rhythm-buffer-pct"></span><progress max="1"></progress></div>
+    <div class="rhythm-buffer"><span>音乐解码中</span><span class="rhythm-buffer-pct"></span><progress max="1"></progress></div>
     <button type="button" class="rhythm-retry" hidden>重新加载音乐</button>
     <div class="rhythm-message"></div>`;
   launch.hidden = true;
@@ -111,20 +215,38 @@ export function createRhythm({ root, button, anchor, onToggle, onHoldBroken }) {
       </div>
     </div>`;
   const statsEl = finale.querySelector('.rhythm-finale-stats');
-  root.append(lane, launch, finale);
+  root.append(lane, hud, launch, finale);
 
-  const song = new SongPlayer(SONG_URL);
+  const song = new WebAudioSongPlayer(SONG_URL, () => sfx.ensureContext());
   let sync = 0;
-  try { const v = Number(localStorage.getItem(SYNC_KEY)); if (Number.isFinite(v)) sync = Math.max(-250, Math.min(250, v)); } catch { /* 无 */ }
+  try {
+    const v = Number(localStorage.getItem(SYNC_KEY));
+    if (Number.isFinite(v)) sync = Math.max(-150, Math.min(150, v));
+  } catch { /* ignore */ }
+  function renderSync() { syncValEl.textContent = `${sync > 0 ? '+' : ''}${sync}ms`; }
+  renderSync();
+  hud.addEventListener('pointerdown', (e) => e.stopPropagation());
+  hud.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-sync]');
+    if (!btn) return;
+    e.stopPropagation();
+    sync = Math.max(-150, Math.min(150, sync + Number(btn.dataset.sync)));
+    try { localStorage.setItem(SYNC_KEY, String(sync)); } catch { /* ignore */ }
+    renderSync();
+    sfx.tick();
+  });
+
   const T = (ts) => song.time(ts) - sync / 1000;
 
   let active = false, playing = false;
-  let next = 0;          // 下一个待判定的音符
-  let holding = false;   // 正按住一个长条
-  let pressError = 0;
+  let next = 0;
+  let holding = false;
+  let pressGrade = 'perfect';
   let streak = 0;
-  const stats = { hit: 0, precise: 0, miss: 0, best: 0 };
+  const stats = { perfect: 0, good: 0, miss: 0, best: 0 };
   let W = 0, H = 0;
+  let judgeAnim = null;
+  let lastBeatIdx = -999;
   new ResizeObserver(([e]) => { W = e.contentRect.width; H = e.contentRect.height; }).observe(lane);
 
   const notes = [];
@@ -137,32 +259,67 @@ export function createRhythm({ root, button, anchor, onToggle, onHoldBroken }) {
     return n;
   }
 
-  function burst(kind, precise) {
-    const b = el('i', 'rhythm-burst');
-    b.dataset.kind = kind;
-    b.dataset.precise = String(precise);
-    track.append(b);
-    const s = kind === 'hold' ? 1.32 : kind === 'release' ? 1.95 : 1.7;
-    b.animate([
-      { transform: 'scale(.72)', opacity: 1 },
-      { transform: 'scale(1.12)', opacity: 1, offset: 0.25 },
-      { transform: `scale(${s})`, opacity: 0 },
-    ], { duration: kind === 'hold' ? 160 : 300, easing: 'ease-out' }).onfinish = () => b.remove();
+  const ticks = [];
+  function tickEl(i) {
+    if (ticks[i]) return ticks[i];
+    const t = el('i', 'rhythm-beat-tick');
+    track.insertBefore(t, targetRing);
+    ticks.push(t);
+    return t;
   }
 
-  /** 结算当前音符 */
-  function judge(ok, err = 0) {
-    if (ok) {
-      streak++;
-      stats.hit++;
-      if (Math.abs(err) < PRECISE) stats.precise++;
-      stats.best = Math.max(stats.best, streak);
-      burst(holding ? 'release' : 'tap', Math.abs(err) < PRECISE);
-    } else {
+  function accuracy() {
+    const total = stats.perfect + stats.good + stats.miss;
+    if (!total) return 100;
+    return ((stats.perfect + stats.good * 0.7) / total) * 100;
+  }
+
+  function updateHud() {
+    hudAcc.textContent = `${accuracy().toFixed(1)}%`;
+    hudCombo.textContent = `${streak} 连击`;
+    streakEl.textContent = streak >= 2 ? `×${streak}` : '';
+  }
+
+  function showJudge(grade) {
+    judgeEl.textContent = grade === 'perfect' ? 'PERFECT' : grade === 'good' ? 'GOOD' : 'MISS';
+    judgeEl.dataset.grade = grade;
+    judgeAnim?.cancel();
+    judgeAnim = judgeEl.animate([
+      { opacity: 0, transform: 'translate(-50%, 4px) scale(.84)' },
+      { opacity: 1, transform: 'translate(-50%, -2px) scale(1.06)', offset: 0.2 },
+      { opacity: 1, transform: 'translate(-50%, -5px) scale(1)', offset: 0.7 },
+      { opacity: 0, transform: 'translate(-50%, -10px) scale(.96)' },
+    ], { duration: 420, easing: 'ease-out', fill: 'forwards' });
+  }
+
+  function burst(kind, perfect) {
+    const b = el('i', 'rhythm-burst');
+    b.dataset.kind = kind;
+    b.dataset.precise = String(perfect);
+    track.append(b);
+    const s = kind === 'hold' ? 1.38 : kind === 'release' ? 2.0 : 1.75;
+    b.animate([
+      { transform: 'scale(.72)', opacity: 1 },
+      { transform: 'scale(1.14)', opacity: 1, offset: 0.25 },
+      { transform: `scale(${s})`, opacity: 0 },
+    ], { duration: kind === 'hold' ? 180 : 300, easing: 'ease-out' }).onfinish = () => b.remove();
+  }
+
+  /** 结算当前音符：grade = 'perfect' | 'good' | 'miss' */
+  function judge(grade, kind = 'tap') {
+    if (grade === 'miss') {
       streak = 0;
       stats.miss++;
+      sfx.rhythmHit('miss');
+    } else {
+      streak++;
+      stats[grade]++;
+      stats.best = Math.max(stats.best, streak);
+      burst(kind, grade === 'perfect');
+      sfx.rhythmHit(kind, grade);
     }
-    streakEl.textContent = streak >= 2 ? `×${streak}` : '';
+    showJudge(grade);
+    updateHud();
     targetRing.classList.remove('following');
     dot.hidden = true;
     next++;
@@ -170,10 +327,14 @@ export function createRhythm({ root, button, anchor, onToggle, onHoldBroken }) {
   }
 
   function resetRun() {
-    next = 0; streak = 0; holding = false;
-    Object.assign(stats, { hit: 0, precise: 0, miss: 0, best: 0 });
-    streakEl.textContent = '';
+    next = 0; streak = 0; holding = false; lastBeatIdx = -999;
+    Object.assign(stats, { perfect: 0, good: 0, miss: 0, best: 0 });
+    judgeAnim?.cancel();
+    judgeEl.textContent = '';
+    progressFill.style.transform = 'scaleX(0)';
+    updateHud();
     for (const n of notes) n.hidden = true;
+    for (const tk of ticks) tk.hidden = true;
     targetRing.classList.remove('following');
     dot.hidden = true;
   }
@@ -181,18 +342,21 @@ export function createRhythm({ root, button, anchor, onToggle, onHoldBroken }) {
   function startSong() {
     resetRun();
     finale.hidden = true;
+    hud.hidden = true;
     launch.hidden = false;
     bufferBox.hidden = false;
     retryBtn.hidden = true;
     message.textContent = '';
-    bufferBar.removeAttribute('value');
-    bufferPct.textContent = '';
+    bufferBar.value = 0;
+    bufferPct.textContent = ' 0%';
     song.load({
       onProgress: (p) => { bufferBar.value = p; bufferPct.textContent = ` ${Math.round(p * 100)}%`; },
       onReady: () => {
         if (!active) return;
         launch.hidden = true;
         lane.hidden = false;
+        hud.hidden = false;
+        hintEl.hidden = false;
         playing = true;
         song.begin();
       },
@@ -201,6 +365,7 @@ export function createRhythm({ root, button, anchor, onToggle, onHoldBroken }) {
         song.stop();
         playing = false;
         lane.hidden = true;
+        hud.hidden = true;
         launch.hidden = false;
         bufferBox.hidden = true;
         retryBtn.hidden = false;
@@ -216,15 +381,18 @@ export function createRhythm({ root, button, anchor, onToggle, onHoldBroken }) {
     playing = false;
     song.stop();
     if (holding) onHoldBroken();
-    // 没判定完的音符（理论上不会有）都算漏掉
-    while (next < CHART.length) judge(false);
+    while (next < CHART.length) judge('miss');
     lane.hidden = true;
+    hud.hidden = true;
     const total = CHART.length;
-    const full = stats.miss === 0;
+    const acc = accuracy();
+    const ap = stats.miss === 0 && stats.good === 0;
+    const fc = stats.miss === 0;
+    const rank = ap || (fc && acc >= 98) ? 'S+' : acc >= 95 ? 'S' : acc >= 88 ? 'A' : acc >= 75 ? 'B' : 'C';
     statsEl.innerHTML = `
-      ${full ? '<div class="rhythm-fc">全连！</div>' : ''}
-      <div><b>${stats.hit}</b> / ${total} 命中 · 精准 <b>${stats.precise}</b></div>
-      <div>最高连击 <b>${stats.best}</b></div>`;
+      <div class="rhythm-rank">评价 <b>${rank}</b>${ap ? ' · ALL PERFECT!' : fc ? ' · FULL COMBO!' : ''}</div>
+      <div>准确度 <b>${acc.toFixed(1)}%</b> · 最高连击 <b>${stats.best}</b></div>
+      <div class="rhythm-breakdown">PERFECT <b>${stats.perfect}</b> · GOOD <b>${stats.good}</b> · MISS <b>${stats.miss}</b> / ${total}</div>`;
     finale.hidden = false;
   }
 
@@ -232,7 +400,7 @@ export function createRhythm({ root, button, anchor, onToggle, onHoldBroken }) {
     if (holding) onHoldBroken();
     active = false; playing = false; holding = false;
     song.stop();
-    lane.hidden = true; launch.hidden = true; finale.hidden = true;
+    lane.hidden = true; hud.hidden = true; launch.hidden = true; finale.hidden = true;
     resetRun();
     button.setAttribute('aria-pressed', 'false');
     document.body.classList.remove('rhythm-playing');
@@ -241,6 +409,7 @@ export function createRhythm({ root, button, anchor, onToggle, onHoldBroken }) {
 
   button.addEventListener('click', () => {
     if (active) { stop(); return; }
+    sfx.ensureContext();
     active = true;
     button.setAttribute('aria-pressed', 'true');
     document.body.classList.add('rhythm-playing');
@@ -259,25 +428,58 @@ export function createRhythm({ root, button, anchor, onToggle, onHoldBroken }) {
     get active() { return active; },
     get playing() { return playing; },
 
-    /** 每帧：自动判漏、摆放轨道和音符 */
+    /** 每帧：自动判漏、节拍脉动、摆放轨道刻度与音符 */
     tick() {
       if (!playing) return;
-      song.update();
       const now = T();
+      if (now >= Math.min(SONG_END, song.duration - 0.1)) { finish(); return; }
+      hintEl.hidden = now > 0.25;
+      progressFill.style.transform = `scaleX(${Math.max(0, Math.min(1, now / SONG_END))})`;
+
+      // 判定超时漏掉的音符
       while (next < CHART.length) {
         const n = CHART[next];
-        const due = holding ? n.until + RELEASE_WINDOW : n.at + PRESS_WINDOW;
+        const due = holding ? n.until + RELEASE_GOOD : n.at + GOOD_WINDOW;
         if (now <= due) break;
         const wasHolding = holding;
-        judge(false);
+        judge('miss');
         if (wasHolding) onHoldBroken();
       }
+
+      // 160 BPM 判定圈节拍脉动，增强音乐卡点直觉
+      const beatIdx = Math.floor((now - BEAT_OFFSET) / BEAT_SEC);
+      if (beatIdx >= 0 && beatIdx !== lastBeatIdx) {
+        lastBeatIdx = beatIdx;
+        if (!holding) {
+          targetRing.animate([
+            { transform: 'scale(1.14)' },
+            { transform: 'scale(1)' },
+          ], { duration: 150, easing: 'ease-out' });
+        }
+      }
+
       const a = anchor();
-      const x0 = a.x, maxLen = Math.max(1, Math.min(300, W - x0 - 20));
+      const x0 = a.x, maxLen = Math.max(120, Math.min(340, W - x0 - 20));
       track.style.transform = `translate(${x0}px, ${a.y}px)`;
       track.style.width = `${maxLen}px`;
-      const speed = Math.max(176, maxLen / 1.65); // 像素/秒：音符提前约 1.65 秒出现
-      const horizon = now + maxLen / speed;
+      const visibleSec = TRAVEL_BEATS * BEAT_SEC; // 固定 4 拍 = 1.5 秒
+      const speed = maxLen / visibleSec;
+      const horizon = now + visibleSec;
+
+      // 每 2 拍（强拍/次强拍）在轨道上绘制淡淡节拍刻度
+      const firstTickBeat = Math.max(0, Math.ceil((now - BEAT_OFFSET) / (BEAT_SEC * 2)) * 2);
+      let ti = 0;
+      for (let b = firstTickBeat; ; b += 2) {
+        const bt = BEAT_OFFSET + b * BEAT_SEC;
+        if (bt > horizon) break;
+        const tk = tickEl(ti++);
+        tk.hidden = false;
+        tk.className = b % 4 === 0 ? 'rhythm-beat-tick bar' : 'rhythm-beat-tick';
+        tk.style.transform = `translateX(${(bt - now) * speed}px)`;
+      }
+      for (let k = ti; k < ticks.length; k++) ticks[k].hidden = true;
+
+      // 渲染视野内的音符
       let last = next;
       while (last < CHART.length && CHART[last].at <= horizon) last++;
       for (let k = last - next; k < notes.length; k++) notes[k].hidden = true;
@@ -292,10 +494,10 @@ export function createRhythm({ root, button, anchor, onToggle, onHoldBroken }) {
         node.hidden = false;
         node.style.transform = `translateX(${shown - 18}px)`;
         node.style.width = `${36 + Math.max(0, head + ((n.until ?? n.at) - n.at) * speed - shown)}px`;
-        node.style.opacity = String(Math.min(1, Math.max(0, (horizon - n.at) / 0.15)));
+        node.style.opacity = String(Math.min(1, Math.max(0, (horizon - n.at) / 0.14)));
         const ring = node.lastElementChild;
-        const approach = Math.max(0, Math.min(1, (n.at - now) / 0.65));
-        ring.style.setProperty('--approach-scale', String(1 + 0.8 * approach));
+        const approach = Math.max(0, Math.min(1, (n.at - now) / (BEAT_SEC * 1.5)));
+        ring.style.setProperty('--approach-scale', String(1 + 0.78 * approach));
         ring.style.setProperty('--approach-opacity', String(i === next ? 0.75 * (1 - approach) : 0));
       }
     },
@@ -303,34 +505,48 @@ export function createRhythm({ root, button, anchor, onToggle, onHoldBroken }) {
     /** 按下：返回 'poke' / 'single'（命中的音符类型），没对上返回 null */
     press(e) {
       if (!playing || holding) return null;
-      const t = T(e.timeStamp);
-      while (next < CHART.length && t > CHART[next].at + PRESS_WINDOW) judge(false);
+      const t = T(e?.timeStamp ?? performance.now());
+      while (next < CHART.length && t > CHART[next].at + GOOD_WINDOW) judge('miss');
       const n = CHART[next];
       if (!n) return null;
-      pressError = t - n.at;
-      if (Math.abs(pressError) > PRESS_WINDOW) return null;
-      if (n.move === 'poke') { judge(true, pressError); return 'poke'; }
+      const err = t - n.at;
+      const absErr = Math.abs(err);
+      if (absErr > EARLY_IGNORE) return null;
+      if (absErr > GOOD_WINDOW) return null; // 太早不扣连击，轻戳一下
+      const grade = absErr <= PERFECT_WINDOW ? 'perfect' : 'good';
+      if (n.move === 'poke') {
+        judge(grade, 'tap');
+        return 'poke';
+      }
       holding = true;
+      pressGrade = grade;
       targetRing.classList.add('following');
-      burst('hold', false);
-      if (e.pointerType === 'touch') { moveDot(e); dot.hidden = false; }
+      burst('hold', grade === 'perfect');
+      sfx.rhythmHit('hold', grade);
+      if (e?.pointerType === 'touch') { moveDot(e); dot.hidden = false; }
       return 'single';
     },
 
     drag(e) { if (holding && !dot.hidden) moveDot(e); },
 
     /** 松手：ok = 正常抬起（不是被打断） */
-    release(ok, ts) {
+    release(ok, ts = performance.now()) {
       if (!active || !holding) return;
       const n = CHART[next];
+      if (!n) { holding = false; return; }
       const err = T(ts) - n.until;
-      const good = ok && Math.abs(err) <= RELEASE_WINDOW;
-      judge(good, Math.abs(err) > Math.abs(pressError) ? err : pressError);
+      const absErr = Math.abs(err);
+      if (!ok || absErr > RELEASE_GOOD) {
+        judge('miss');
+        return;
+      }
+      const relGrade = absErr <= RELEASE_PERFECT ? 'perfect' : 'good';
+      const finalGrade = pressGrade === 'perfect' && relGrade === 'perfect' ? 'perfect' : 'good';
+      judge(finalGrade, 'release');
     },
 
     exit: stop,
-    /** 调试用 */
-    get debug() { return { time: T(), next, stats: { ...stats }, streak, chart: CHART, finish }; },
+    get debug() { return { time: T(), next, stats: { ...stats }, streak, sync, chart: CHART, finish }; },
   };
 
   function moveDot(e) { dot.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`; }

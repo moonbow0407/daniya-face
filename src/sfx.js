@@ -266,6 +266,47 @@ export class Sfx {
     if (!this.enabled || !this.ctx || this.ctx.state !== 'running') return;
     this.tone({ f0: 1500, f1: 1200, glide: 0.02, dur: 0.035, gain: 0.05 });
   }
+
+  /** 音游打击反馈：轻脆、不盖过人声，增强卡点手感（不受 quiet 限制，仍受全局音效开关控制） */
+  rhythmHit(kind, grade = 'perfect') {
+    if (!this.enabled || !this.ctx || this.ctx.state !== 'running' || document.hidden) return;
+    if (kind === 'miss') {
+      this.tone({ type: 'triangle', f0: 175, f1: 110, glide: 0.07, attack: 0.003, dur: 0.09, gain: 0.07 });
+      return;
+    }
+    if (kind === 'tap') {
+      const hi = grade === 'perfect';
+      this.tone({ type: 'triangle', f0: hi ? 920 : 760, f1: hi ? 540 : 450, glide: 0.035, attack: 0.002, dur: 0.065, gain: hi ? 0.16 : 0.12 });
+      this.noise({ type: 'bandpass', f0: hi ? 3200 : 2400, q: 1.5, attack: 0.001, dur: 0.018, gain: hi ? 0.07 : 0.05 });
+      vibrate(5);
+      return;
+    }
+    if (kind === 'hold') {
+      this.tone({ type: 'sine', f0: 587, f1: 784, glide: 0.05, attack: 0.003, dur: 0.085, gain: 0.14 });
+      vibrate(6);
+      return;
+    }
+    if (kind === 'release') {
+      const hi = grade === 'perfect';
+      this.tone({ type: 'sine', f0: hi ? 1046.5 : 880, attack: 0.002, dur: 0.11, gain: 0.13 });
+      this.tone({ type: 'sine', f0: hi ? 1568 : 1318.5, at: 0.02, attack: 0.002, dur: 0.11, gain: 0.08 });
+      vibrate(5);
+    }
+  }
+
+  /** 确保并获取共享 AudioContext（供音游高精度音频时钟使用） */
+  ensureContext() {
+    if (!this.ctx) {
+      const wasEnabled = this.enabled;
+      this.enabled = true;
+      this.unlock();
+      this.enabled = wasEnabled;
+      if (!wasEnabled && this.master) this.master.gain.value = 0;
+    } else if (this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+    return this.ctx;
+  }
 }
 
 function vibrate(ms) {
