@@ -164,6 +164,38 @@ for (const m of mesh.material) {
 }
 const faceHit = new FaceHit(mesh, ['face1']);
 
+/*
+ * 音游的"脸颊点"（参考站同款）：右脸颊上离 (0.47, 17.15, 0.34)（参考坐标）最近的皮肤顶点。
+ * 音游轨道从这里出发；音游中点屏幕任何位置，都当成戳/拉这个点——不用瞄准脸。
+ */
+const rhythmVertex = (() => {
+  const pos = geo.attributes.position;
+  const mi = mesh.material.findIndex((m) => m.name === 'face1');
+  const want = new THREE.Vector3(0.47 * 0.89, 17.15 - 0.49, 0.34 + 0.02);
+  const v = new THREE.Vector3();
+  let best = -1, bestD = Infinity;
+  for (const g of geo.groups) {
+    if (g.materialIndex !== mi) continue;
+    for (let i = g.start; i < g.start + g.count; i++) {
+      const k = geo.index.getX(i);
+      v.fromBufferAttribute(pos, k);
+      if (v.x <= 0) continue;
+      const d = v.distanceToSquared(want);
+      if (d < bestD) { bestD = d; best = k; }
+    }
+  }
+  return best;
+})();
+const _rv = new THREE.Vector3();
+/** 脸颊点当前的世界坐标（含骨骼、表情） */
+function rhythmPoint() {
+  return mesh.localToWorld(mesh.getVertexPosition(rhythmVertex, _rv));
+}
+function rhythmHit() {
+  const local = new THREE.Vector3().fromBufferAttribute(geo.attributes.position, rhythmVertex);
+  return { point: rhythmPoint().clone(), local, ref: toRef(local) };
+}
+
 // ---------- 骨骼与基础姿势 ----------
 const bone = Object.fromEntries(mesh.skeleton.bones.map((b) => [b.name, b]));
 const rot = (name, x, y, z) => {
@@ -271,16 +303,12 @@ blink.onTick = (second) => sfx.blinkTick(second);
 // ---------- 音游 ----------
 // 轨道起点：右脸颊外侧（画面右侧）。绑定姿态坐标 → 跟着头动 → 投影到屏幕
 mesh.updateMatrixWorld(true);
-const headRestInv = headBone.matrixWorld.clone().invert();
-const cheekAnchor = new THREE.Vector3(0.8 * 0.89, 16.95 - 0.49, 0.17);
 const _anchor = new THREE.Vector3();
-const _m4 = new THREE.Matrix4();
 const rhythm = createRhythm({
   root: app,
   button: document.getElementById('rhythm-tool'),
   anchor() {
-    _m4.multiplyMatrices(headBone.matrixWorld, headRestInv);
-    _anchor.copy(cheekAnchor).applyMatrix4(_m4).project(camera);
+    _anchor.copy(rhythmPoint()).project(camera);
     const r = stage.getBoundingClientRect();
     return { x: r.left + ((_anchor.x + 1) / 2) * r.width, y: r.top + ((1 - _anchor.y) / 2) * r.height };
   },
@@ -397,7 +425,8 @@ stage.addEventListener('pointerdown', (e) => {
   }
   if (!e.isPrimary || e.button !== 0 || holdId !== null || pinchStart) return;
   sfx.unlock();
-  const hit = hitFace(e);
+  // 音游中不看点在哪，统一作用在右脸颊（参考站同款）
+  const hit = rhythm.active ? rhythmHit() : hitFace(e);
   if (!hit) return;
   e.preventDefault();
   const { x, y, z } = hit.ref;
@@ -437,6 +466,8 @@ stage.addEventListener('pointerdown', (e) => {
   camera.getWorldDirection(dragPlane.normal);
   dragPlane.setFromNormalAndCoplanarPoint(dragPlane.normal, hit.point);
   dragStart.copy(hit.point);
+  // 音游里手指不在脸上：拖动从手指按下的位置算起（参考站同款）
+  if (rhythm.active) rayFrom(e).intersectPlane(dragPlane, dragStart);
   stage.dataset.cursor = 'grabbing';
 });
 
@@ -542,7 +573,7 @@ let hoverEvent = null;
 function updateHoverCursor() {
   if (!hoverEvent || holdId !== null) return;
   const hit = hitFace(hoverEvent);
-  stage.dataset.cursor = hit ? (mode === 'poke' || rhythm.active ? 'poke' : 'grab') : '';
+  stage.dataset.cursor = rhythm.active ? 'poke' : hit ? (mode === 'poke' ? 'poke' : 'grab') : '';
   hoverEvent = null;
 }
 
@@ -785,4 +816,4 @@ function frame() {
 requestAnimationFrame(frame);
 
 // 调试用
-Object.assign(window, { __daniya: { mesh, camera, uniforms, pokes, bone, zoom, uvMorphs, sfx, debug, renderer, outline, scene, rhythm, hitFace } });
+Object.assign(window, { __daniya: { mesh, camera, uniforms, pokes, bone, zoom, uvMorphs, sfx, debug, renderer, outline, scene, rhythm, hitFace, get state() { return { holdId, pullSides, pulling, mode, delta: delta.length(), target: target.length() / PT }; } } });
