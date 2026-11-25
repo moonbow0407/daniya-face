@@ -124,7 +124,7 @@ html, body {
 .toolbar a.tool-link svg { opacity: .88; }
 @media (max-width: 520px) {
   .toolbar a.tool-link { width: 50px; min-height: 46px; font-size: 10px; }
-  .toolbar a.tool-link svg { width: 20px; height: 20px; }
+  .toolbar a.tool-link svg { width: auto; height: 19px; }
 }
 
 /* ---------- 音游（布局照参考站，配色换成本站的粉紫） ---------- */
