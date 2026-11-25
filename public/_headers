@@ -3,6 +3,11 @@
 
 /models/*
   Cache-Control: public, max-age=604800
+  X-Robots-Tag: noindex
+
+/music/*
+  Cache-Control: public, max-age=604800
+  X-Robots-Tag: noindex
 
 /ammo/*
   Cache-Control: public, max-age=604800

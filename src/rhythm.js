@@ -6,7 +6,7 @@
  * - 视觉卡点增强：判定圈随 160 BPM 节拍脉动、轨道上显示每 2 拍节拍刻度、实时弹出判定文字与准确度，
  *   并提供 ±150ms 音频延迟微调（适配蓝牙耳机等高延迟设备）。
  */
-import { CHART, SONG_URL, BEAT_OFFSET, BEAT_SEC, SONG_END } from './rhythmChart.js';
+import { CHART, SONG_URL, SONG_CREDIT, BEAT_OFFSET, BEAT_SEC, SONG_END } from './rhythmChart.js';
 
 const PERFECT_WINDOW = 0.080;
 const GOOD_WINDOW = 0.175;
@@ -392,7 +392,8 @@ export function createRhythm({ root, button, anchor, sfx, onToggle, onHoldBroken
     statsEl.innerHTML = `
       <div class="rhythm-rank">评价 <b>${rank}</b>${ap ? ' · ALL PERFECT!' : fc ? ' · FULL COMBO!' : ''}</div>
       <div>准确度 <b>${acc.toFixed(1)}%</b> · 最高连击 <b>${stats.best}</b></div>
-      <div class="rhythm-breakdown">PERFECT <b>${stats.perfect}</b> · GOOD <b>${stats.good}</b> · MISS <b>${stats.miss}</b> / ${total}</div>`;
+      <div class="rhythm-breakdown">PERFECT <b>${stats.perfect}</b> · GOOD <b>${stats.good}</b> · MISS <b>${stats.miss}</b> / ${total}</div>
+      <div class="rhythm-credit">${SONG_CREDIT}</div>`;
     finale.hidden = false;
   }
 

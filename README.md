@@ -10,7 +10,7 @@
 | 戳脸 | 点脸颊，软软弹一下、笑一下；连戳音高会往上走 |
 | 单手 / 双手拉脸 | 按住脸颊往外拖；拉久了会脸红，松手后有点生闷气；偶尔冒汗滴 |
 | 捧脸 | 按住：先惊讶地嘟嘴 → 害羞地躲开视线 → 眯眼往手心里蹭；按住画圈是揉脸，揉久了会晕；松手"嘿嘿"一笑 |
-| 音游 | 《可愛くてごめん》：圆音符点一下（戳），长条按住（拉）到尾巴松手；打完弹出结算 |
+| 音游 | 《しゅわしゅわハニーレモン350ml》：圆音符点一下（戳），长条按住（Wink 拉脸）到尾巴松手；支持空格 / D / F / J / K，打完弹出结算 |
 
 滚轮 / 双指捏合缩放。左上角可以开关音效。
 
@@ -30,7 +30,7 @@
 | 文件 | 说明 |
 | --- | --- |
 | `public/models/daniya_red/daniya_red.pmx`（及贴图） | 达妮娅红色一形态 MMD 模型（修模绑骨版） |
-| `public/music/kawaikute-gomen.mp3` | 音游歌曲《可愛くてごめん》 |
+| `public/music/honey-lemon-350ml.mp3` | 音游免费 BGM《しゅわしゅわハニーレモン350ml》（しゃろう / DOVA-SYNDROME） |
 | `public/sfx/pull-tension.wav`、`pull-rub.wav`、`pull-release.wav` | 拉脸音效采样；缺了拉脸就不出声，其它不受影响 |
 | `public/loading.jpg`、`public/finale.jpg` | 加载图、音游结算图 |
 
@@ -48,4 +48,4 @@ npm run build
 
 - 玩法、脸部形变公式、音游谱面与拉脸音效参考 / 来自 [phoebe-face-lab](https://phoebe-face-lab.vercel.app/)
 - 角色与模型版权归库洛游戏及模型作者所有，本项目仅为同人爱好，不作商用
-- 歌曲《可愛くてごめん》© HoneyWorks
+- 音游 BGM：《しゅわしゅわハニーレモン350ml》© しゃろう（[OpenTracks / DOVA-SYNDROME](https://opentracks.com/bgm/detail/14621) 免费素材）

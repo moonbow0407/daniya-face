@@ -220,6 +220,7 @@ body.rhythm-playing .toolbar.right button:not(#rhythm-tool) { display: none; }
 .rhythm-sync button:hover { background: var(--chip-active); color: var(--chip-active-ink); border-color: transparent; }
 .rhythm-rank { font-size: 17px; font-weight: 700; letter-spacing: .04em; color: var(--chip-active); margin-bottom: 2px; }
 .rhythm-breakdown { font-size: 12px; opacity: .85; }
+.rhythm-credit { font-size: 11px; opacity: .62; margin-top: 2px; }
 @media (max-width: 520px) {
   .rhythm-hud { top: 72px; padding: 5px 10px; font-size: 11px; gap: 6px; }
 }
