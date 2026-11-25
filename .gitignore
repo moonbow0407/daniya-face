@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.wrangler/
+
+# ---- 素材不进版本库（版权归原作者），本地放好再构建 ----
+# 官方模型禁止二次配布
+public/models/
+鸣潮_达妮娅*/
+# 歌曲、拉脸采样、图片
+*.mp3
+public/music/
+public/sfx/
+public/*.jpg
+public/*.png
+# 模型渲染图、模型分析数据
+design/
+scripts/model-report.json
