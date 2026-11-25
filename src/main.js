@@ -43,10 +43,15 @@ function progressTarget() {
 
 // ---------- 渲染器 / 场景 ----------
 const stage = document.querySelector('#stage');
+const maxDpr = () => (window.innerWidth < 768 ? 1.5 : 2);
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxDpr()));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 stage.appendChild(renderer.domElement);
+renderer.domElement.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  console.warn('[webgl] context lost');
+});
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(22, 1, 0.5, 200);
@@ -66,7 +71,7 @@ const framing = { wide: { d: 17, y: 16.45 }, close: { d: 5.4, y: 16.78 } };
 
 function resize() {
   const w = stage.clientWidth, h = stage.clientHeight;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 拖到另一块屏幕时 DPR 会变
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxDpr())); // 拖到另一块屏幕时 DPR 会变
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   const portrait = camera.aspect < 0.8;
@@ -117,22 +122,34 @@ function loadAmmo() {
   });
 }
 
+// 只保留实际用到的顶点表情，过滤掉 ~175 个冗余 morph，可将移动端 WebGL 显存与内存占用降低约 85%（~330MB → ~49MB）
+const USED_MORPHS = new Set([
+  'まばたき', '下', '上', '口横狭め', '口角下げ', '口前', '∧', 'びっくり',
+  '困る', 'じと目', '笑い', '口角上げ', 'hehe', '左口横広げ', '右口横広げ',
+  'ウィンク', 'ぺろっ', 'にこり', '照れ', 'なごみR', 'なごみL',
+  '右口角上げ', '左口角上げ', '左困る', '右困る', '(○｀ε´○)', '真面目', '▲',
+  'emo3右', 'emo3左', 'emo3上',
+]);
+
 function loadModel() {
   return new Promise((resolve, reject) => {
     const loader = new MMDLoader(manager);
     // 自己拿到解析数据：UV 表情（漫画符号）需要它，MMDLoader 本身不支持
     loader.loadPMX(MODEL_URL, (data) => {
       try {
+        const uvMorphData = data.morphs.filter((m) => m.type === 3);
+        data.morphs = data.morphs.filter((m) => m.type === 1 && USED_MORPHS.has(m.name));
+        data.metadata.morphCount = data.morphs.length;
         const mesh = loader.meshBuilder.setCrossOrigin(loader.crossOrigin).build(data, THREE.LoaderUtils.extractUrlBase(MODEL_URL));
-        resolve({ mesh, data });
+        resolve({ mesh, uvMorphData });
       } catch (err) { reject(err); }
-    }, (e) => { if (e.total) progress.pmx = e.loaded / e.total; }, reject);
+    }, (e) => { progress.pmx = Math.min(1, e.loaded / (e.total || 12_400_000)); }, reject);
   });
 }
 
-let mesh, pmx;
+let mesh, uvMorphData;
 try {
-  [{ mesh, data: pmx }] = await Promise.all([loadModel(), BAKE ? loadAmmo() : null]);
+  [{ mesh, uvMorphData }] = await Promise.all([loadModel(), BAKE ? loadAmmo() : null]);
   progress.pmx = 1;
   loaderLabel.textContent = '正在铺贴图…';
   await texturesReady;
@@ -149,7 +166,7 @@ mesh.frustumCulled = false;
 
 const geo = mesh.geometry;
 makeMorphsRelative(geo);
-const uvMorphs = new UvMorphs(geo, pmx.morphs);
+const uvMorphs = new UvMorphs(geo, uvMorphData);
 
 // 漫画符号（汗滴等）贴片：淡入淡出
 const symbolMat = mesh.material.find((m) => m.name === 'emo3');
@@ -843,7 +860,7 @@ function step(dt) {
 }
 
 // 预热：编译着色器、让物理（头发、袖子）稳定下来，再淡入，避免用户看到"搭骨架"的过程
-await renderer.compileAsync(scene, camera);
+try { await renderer.compileAsync(scene, camera); } catch (err) { console.warn('[webgl] compileAsync fallback:', err); }
 for (let i = 0; i < 20; i++) {
   step(1 / 60);
   if (i % 5 === 0) { progress.prep = 0.6 + (0.4 * i) / 20; await new Promise((r) => requestAnimationFrame(r)); }
