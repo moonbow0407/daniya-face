@@ -17,11 +17,29 @@
 ## 技术
 
 - Vite + three.js 0.170（MMDLoader 读 PMX 模型，OutlineEffect 描边）
-- 脸颊形变全在 GPU 着色器里（`src/cheekRig.js`）：戳的冲击场、拉扯的软垫场、回弹弹簧，只作用在脸部皮肤，不带动头发
-- 表情 = 模型自带的表情 morph 组合；漫画符号是 UV 表情（MMDLoader 不支持，`src/emotes.js` 自己实现）
-- 头发的静止姿势是离线跑一次物理烘焙出来的（`src/hairRest.json`），运行时不开物理，不穿模、不飘
-- 音效：拉脸用采样，其它用 Web Audio 现场合成（`src/sfx.js`）
-- 音游：`src/rhythm.js`，谱面 `src/rhythmChart.js`
+- 脸颊形变全在 GPU 着色器里（`src/rig/`）：戳的冲击场、拉扯的软垫场、回弹弹簧，只作用在脸部皮肤；垂在脸颊前的前发只在快穿模时被推开
+- 表情 = 模型自带的表情 morph 组合：引擎只算通用的情绪信号（`src/expression/signals.js`），每个角色用自己的表情表把信号换成表情（`src/characters/<角色>/expressions.js`）；漫画符号是 UV 表情（MMDLoader 不支持，`src/rig/symbols.js` 自己实现）
+- 开放哪些动作、界面配色都由角色配置决定：工具栏按 `personality.actions` 生成，配色是 `presentation.theme` 写入的 CSS 变量
+- 头发的静止姿势是离线跑一次物理烘焙出来的（角色目录下的 `hairRest.json`），运行时不开物理，不穿模、不飘
+- 音效：拉脸用采样，其它用 Web Audio 现场合成（`src/audio/sfx.js`）
+- 音游：`src/rhythm/`，谱面在 `src/rhythm/charts/`
+
+### 目录结构
+
+```
+src/
+  main.js            入口：选角色 → 加载 → 装配 → 主循环
+  characters/        角色配置，每个角色一个目录：model 模型层 / personality 性格层 / presentation 呈现层；
+                     index.js 是注册表，?char=<id> 切换
+  core/              渲染舞台与镜头、加载界面与模型加载、模型准备、骨骼姿势
+  rig/               参考坐标校准、形变 uniform、着色器、弹簧、点击检测、漫画符号
+  interaction/       指针 / 键盘输入、交互状态、拉扯物理
+  expression/        情绪信号、表情驱动（语义名 → morph）、头部动作与眨眼
+  rhythm/            音游判定、界面、播放器、charts/ 谱面
+  audio/  ui/        音效；工具栏（按配置生成）、主题与样式
+```
+
+换一个角色：见 [docs/PORTING.md](docs/PORTING.md)。
 
 ## 本地运行
 
@@ -40,7 +58,7 @@ npm run dev      # http://localhost:5173
 npm run build
 ```
 
-换模型或换形态后，用 `http://localhost:5173/?bake` 打开页面，控制台里复制 `window.__bakedHairRest` 存为 `src/hairRest.json`（头发的静止姿势）。
+换模型或换形态后，用 `http://localhost:5173/?bake` 打开页面，控制台里复制 `window.__bakedHairRest` 存为 `src/characters/<角色>/hairRest.json`（头发的静止姿势）。
 
 部署：`./deploy.ps1`（Cloudflare Pages，本地构建后上传，模型等素材随 `dist` 一起上传）。
 

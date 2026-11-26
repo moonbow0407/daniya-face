@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>捏捏达妮娅</title>
-  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/ui/style.css" />
 </head>
 <body>
   <div id="app" data-state="loading">
@@ -39,28 +39,8 @@
       </a>
     </div>
 
-    <div class="toolbar right" role="toolbar" aria-label="脸部动作">
-      <button data-mode="cup" type="button" aria-pressed="false" title="捧脸">
-        <svg viewBox="0 0 28 24" width="26" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8q-1 9 10 12Q25 17 24 8"/><path d="M9 9q5 4 10 0"/></svg>
-        <span>捧脸</span>
-      </button>
-      <button data-mode="poke" type="button" aria-pressed="true">
-        <svg viewBox="0 0 28 24" width="26" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21V8a2 2 0 0 1 4 0v6l5 1q3 1 2 4l-1 2"/><path d="M5 5l2 2M13 1v3M21 5l-2 2"/></svg>
-        <span>戳脸</span>
-      </button>
-      <button data-mode="single" type="button" aria-pressed="false">
-        <svg viewBox="0 0 28 24" width="26" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5a7 7 0 1 0 0 14M13 12h12m-4-4 4 4-4 4"/></svg>
-        <span>单手拉脸</span>
-      </button>
-      <button data-mode="double" type="button" aria-pressed="false">
-        <svg viewBox="0 0 28 24" width="26" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6q4-3 8 0m-8 12q4 3 8 0M2 12h8m-5-3-3 3 3 3m13-3h8m-3-3 3 3-3 3"/></svg>
-        <span>双手拉脸</span>
-      </button>
-      <button id="rhythm-tool" type="button" aria-pressed="false" title="开始或退出音游">
-        <svg viewBox="0 0 28 24" width="26" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 18V5l12-2v13"/><circle cx="7" cy="18" r="3"/><circle cx="19" cy="16" r="3"/></svg>
-        <span>音游</span>
-      </button>
-    </div>
+    <!-- 右侧动作工具栏：按角色配置 personality.actions 生成（src/ui/toolbar.js） -->
+    <div class="toolbar right" role="toolbar" aria-label="脸部动作"></div>
 
     <div id="loader" role="status" aria-live="polite">
       <div class="loader-card">

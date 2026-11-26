@@ -4,18 +4,19 @@
  *   采样文件放在 public/sfx/（不进仓库）；缺文件时拉脸就不出声，其它音效不受影响。
  * - 其它（戳、捧、脸红、汗滴、鼓腮、眨眼）：Web Audio 现场合成，风格是软、圆、短。
  */
-const STORE_KEY = 'daniya.sound';
 const SAMPLES = { tension: '/sfx/pull-tension.wav', release: '/sfx/pull-release.wav', rub: '/sfx/pull-rub.wav' };
 
-function loadEnabled() {
-  try { return localStorage.getItem(STORE_KEY) !== 'off'; } catch { return true; }
+function loadEnabled(key) {
+  try { return localStorage.getItem(key) !== 'off'; } catch { return true; }
 }
 
 const PENTA = [0, 2, 4, 7, 9, 12, 14, 16]; // 连戳时音高沿五声音阶往上走
 
 export class Sfx {
-  constructor() {
-    this.enabled = loadEnabled();
+  /** @param {string} storagePrefix 开关状态存在 localStorage 的 `${storagePrefix}.sound` */
+  constructor(storagePrefix = 'face') {
+    this.storeKey = `${storagePrefix}.sound`;
+    this.enabled = loadEnabled(this.storeKey);
     this.quiet = false;      // 音游进行中：只听音乐，不出交互音效
     this.ctx = null;
     this.buf = {};
@@ -28,7 +29,7 @@ export class Sfx {
 
   setEnabled(on) {
     this.enabled = on;
-    try { localStorage.setItem(STORE_KEY, on ? 'on' : 'off'); } catch { /* 隐私模式 */ }
+    try { localStorage.setItem(this.storeKey, on ? 'on' : 'off'); } catch { /* 隐私模式 */ }
     if (this.ctx) this.master.gain.setTargetAtTime(on ? 0.9 : 0, this.ctx.currentTime, 0.02);
     if (!on) { this.pullRelease(false); this.cupRub(0); }
   }

@@ -4,13 +4,13 @@
  * 经本地音源实测对齐：BPM = 125.000（1 拍 = 0.480s，1 小节 4 拍 = 1.920s），首拍 = 0.980s，全长约 97 秒。
  * 所有音符严格落在 125 BPM 强拍/正拍网格上，长按统一 2~3 拍且尾部至少留 1 拍换气，轻松卡点不手忙脚乱。
  */
-export const SONG_URL = '/music/honey-lemon-350ml.mp3';
-export const SONG_TITLE = 'しゅわしゅわハニーレモン350ml';
-export const SONG_CREDIT = 'BGM：しゅわしゅわハニーレモン350ml / しゃろう（DOVA-SYNDROME）';
-export const BPM = 125;
-export const BEAT_SEC = 60 / BPM; // 0.480s
-export const BEAT_OFFSET = 0.980; // Bar 0 第 1 拍底鼓精确落点（秒）
-export const SONG_END = 96.2;     // 尾音自然淡出后的结算时机（秒）
+const SONG_URL = '/music/honey-lemon-350ml.mp3';
+const SONG_TITLE = 'しゅわしゅわハニーレモン350ml';
+const SONG_CREDIT = 'BGM：しゅわしゅわハニーレモン350ml / しゃろう（DOVA-SYNDROME）';
+const BPM = 125;
+const BEAT_SEC = 60 / BPM; // 0.480s
+const BEAT_OFFSET = 0.980; // Bar 0 第 1 拍底鼓精确落点（秒）
+const SONG_END = 96.2;     // 尾音自然淡出后的结算时机（秒）
 
 const raw = [];
 const tap = (bar, beat) => raw.push([bar * 4 + beat, null]);
@@ -66,9 +66,20 @@ for (let bar = 41; bar <= 47; bar++) {
 // Bar 48 (93.140s - 95.060s): 终曲长音收尾
 hold(48, 0, 3);
 
-export const CHART = raw.map(([beat, dur]) => {
+const CHART = raw.map(([beat, dur]) => {
   const at = +(BEAT_OFFSET + beat * BEAT_SEC).toFixed(4);
   return dur === null
     ? { at, move: 'poke' }
     : { at, until: +(at + dur * BEAT_SEC).toFixed(4), move: 'single' };
 });
+
+/** 一首歌 = 音频 + 节拍网格 + 谱面。音游引擎只认这个结构，换歌换谱只需新写一个文件 */
+export default {
+  url: SONG_URL,
+  title: SONG_TITLE,
+  credit: SONG_CREDIT,
+  beatSec: BEAT_SEC,
+  beatOffset: BEAT_OFFSET,
+  end: SONG_END,
+  notes: CHART,
+};
