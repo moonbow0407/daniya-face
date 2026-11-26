@@ -72,7 +72,7 @@ export async function loadModel({ url, sizeHint, keepMorphs, progress, texDir = 
     return i < 0 ? u : `${u.slice(0, i)}/${texDir}/${u.slice(i + lower.length)}`;
   });
   // 贴图 404 时开发服务器会返回 index.html（模型只剩描边、控制台却没有报错），这里明确报出来
-  manager.onError = (u) => console.error(`[贴图] 加载失败：${u}（核对 public/ 下的文件名和大小写：npm run port -- check <id>）`);
+  manager.onError = (u) => console.error(`[贴图] 加载失败：${u}（核对 public/ 下的文件名和大小写）`);
   manager.onProgress = (u, loaded, total) => { if (!u.endsWith('.pmx')) progress.tex = loaded / total; };
   const texturesReady = new Promise((resolve) => { manager.onLoad = resolve; });
 

@@ -1,6 +1,5 @@
 /*
- * 角色注册表。新增角色：npm run port -- new <id> ...（会自动加到下面）。
- * 通过 ?char=<id> 选择角色，默认是 site.json 的 defaultCharacter。
+ * 角色注册表。通过 ?char=<id> 选择角色，默认是 site.json 的 defaultCharacter。
  */
 import site from '../../site.json';
 import daniya from './daniya/index.js';

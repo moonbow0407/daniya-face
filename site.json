@@ -1,5 +1,5 @@
 {
-  "$comment": "站点配置：用模板做自己的站时改这里（见 skills/port-character/SKILL.md 第 0 步）。links 是左上角的链接按钮，icon 可选 github / origin / link；cloudflare.analyticsToken 留空就不加统计。",
+  "$comment": "站点配置。links 是左上角的链接按钮，icon 可选 github / origin / link；cloudflare.analyticsToken 留空就不加统计。",
   "defaultCharacter": "daniya",
   "links": [
     {

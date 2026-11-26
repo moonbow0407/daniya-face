@@ -32,7 +32,6 @@ import { setupSiteLinks, setupAnalytics } from './ui/site.js';
 const cfg = pickCharacter();
 const { model: modelCfg, personality, presentation } = cfg;
 const BAKE = new URLSearchParams(location.search).has('bake');
-const STUDIO = new URLSearchParams(location.search).has('studio');
 const app = document.querySelector('#app');
 
 setupSiteLinks();
@@ -50,7 +49,7 @@ try {
   [{ mesh, uvMorphData, texturesReady }] = await Promise.all([
     loadModel({
       url: modelCfg.file, sizeHint: modelCfg.bytes, texDir: modelCfg.texDir, progress: loading.progress,
-      keepMorphs: STUDIO ? null : usedMorphNames(modelCfg), // 工作台要浏览模型的全部表情
+      keepMorphs: usedMorphNames(modelCfg),
     }),
     BAKE ? loadAmmo() : null,
   ]);
@@ -160,7 +159,3 @@ window.__face = {
 };
 window[`__${cfg.id}`] = window.__face;
 
-// 表情工作台（?studio）：演示各动作、浏览模型的全部表情和材质。只在需要时加载
-if (STUDIO) {
-  import('./ui/studio.js').then((m) => m.openStudio(ctx));
-}
