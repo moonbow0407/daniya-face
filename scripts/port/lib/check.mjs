@@ -40,6 +40,14 @@ export async function check({ id, root, loadModule }) {
     if (!mt.skin?.length) errors.push('model.materials.skin 为空：至少要有脸部皮肤材质');
     if (!mt.hitTest?.length) errors.push('model.materials.hitTest 为空：点击检测需要脸部皮肤材质');
     if (mt.symbol && !mats.has(mt.symbol)) errors.push(`model.materials.symbol "${mt.symbol}" 在模型里不存在`);
+    const vs = m.vertexSymbols;
+    if (vs) {
+      if (!mats.has(vs.material)) errors.push(`model.vertexSymbols.material "${vs.material}" 在模型里不存在`);
+      for (const [k, o] of Object.entries(vs.list ?? {})) {
+        if (!m.morphs?.[k]) errors.push(`model.vertexSymbols.list.${k} 没有在 model.morphs 里映射`);
+        if (!Array.isArray(o.at) || o.at.length !== 3) errors.push(`model.vertexSymbols.list.${k}.at 应为 [x, y, z]`);
+      }
+    }
     const b = m.bones ?? {};
     for (const n of [b.head, b.neck, ...(b.eyes ?? []), ...(b.restPose ?? []).map((r) => r[0])]) {
       if (!n || !pmx.bones[n]) errors.push(`model.bones 里的骨骼 "${n}" 在模型里不存在`);

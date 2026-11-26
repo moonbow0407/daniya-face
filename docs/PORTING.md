@@ -54,6 +54,7 @@ npm run port -- new <id> --model public/models/<模型目录>/<模型>.pmx --nam
 | `bones` | `head`、`neck`、`eyes`；`restPose` 把 A 字型手臂放下 |
 | `morphs` | 语义名 → 模型表情名。模型里没有的删掉即可，表情表里用到它的地方会被跳过 |
 | `symbolSpots` | 漫画符号的预设位置表情；模型没有符号贴片就删掉 |
+| `vertexSymbols`（可选） | 用顶点表情做的漫画符号（💢、竖线等，常在 emo 类小材质上）：`{ material, list: { 语义名: { at, scale, tint, clip } } }`。引擎把它们缩小、摆到 `at`、淡入，并重新上色成和贴片符号（达妮娅的汗滴）一样的画风；`clip` 剪掉贴图集里漏进来的相邻图案 |
 | `hairAvoid` | 前发避让，见第 5 步 |
 
 ### 3.2 性格层 `expressions.js` + `personality.js`

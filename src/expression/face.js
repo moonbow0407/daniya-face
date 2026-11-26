@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { symbolUniforms, symbolCenter } from '../rig/symbols.js';
+import { createVertexSymbols } from '../rig/vertexSymbols.js';
 import { BlinkRhythm } from '../rig/springs.js';
 import { MorphDriver } from './morphs.js';
 import { createSignals } from './signals.js';
@@ -36,6 +37,7 @@ export function createFace(ctx) {
   const morphs = new MorphDriver(mesh, morphNames);
   const blink = new BlinkRhythm();
   blink.onTick = (second) => sfx.blinkTick(second);
+  const updateVertexSymbols = createVertexSymbols(mesh, cfg.model);
   const signals = createSignals({ s, sfx, symbols, debug, mesh, symbolCenter, symbolMaterial: materials.symbol });
 
   let pullLean = 0, motionTime = 0;
@@ -102,5 +104,6 @@ export function createFace(ctx) {
     if (debug.morphs) Object.assign(targets, debug.morphs);
     morphs.apply(targets, dt);
     if (debug.raw) morphs.setRaw(debug.raw, 1); // 工作台预览：按模型里的名字直接显示某个表情
+    updateVertexSymbols(morphs, debug);
   };
 }
