@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MMDLoader } from 'three/examples/jsm/loaders/MMDLoader.js';
 import { MMDAnimationHelper } from 'three/examples/jsm/animation/MMDAnimationHelper.js';
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
-import { PT, toRef, vecToRef, uniforms, patchMaterial, addCheekMobility, PokeField, BlinkRhythm, CheekSpring } from './cheekRig.js';
+import { PT, toRef, vecToRef, uniforms, patchMaterial, patchOutlineMaterial, addCheekMobility, PokeField, BlinkRhythm, CheekSpring } from './cheekRig.js';
 import { FaceHit } from './faceHit.js';
 import { Sfx } from './sfx.js';
 import { createRhythm } from './rhythm.js';
@@ -172,15 +172,30 @@ const uvMorphs = new UvMorphs(geo, uvMorphData);
 const symbolMat = mesh.material.find((m) => m.name === 'emo3');
 setupSymbol(symbolMat);
 
-// 脸部皮肤：拉 + 戳 + 泛红；口腔/舌头：只跟随戳。其它（眼睛、头发）一律不动
+// 脸部皮肤：拉 + 戳 + 泛红；口腔/舌头：只跟随戳；
+// 前发（垂在脸颊前的发丝）：只跟随拉，否则脸颊被拉开时会从发丝里穿出来。其它（眼睛、后发）一律不动
+const HAIR_ON_CHEEK = new Set(['前发', '前发+']);
 addCheekMobility(geo);
 for (const m of mesh.material) {
   if (m.name === 'face1' || m.name === 'Cheek') patchMaterial(m, 'face');
   else if (m.name === 'kou1' || m.name === 'she1') patchMaterial(m, 'mouth');
+  else if (HAIR_ON_CHEEK.has(m.name)) patchMaterial(m, 'hair');
   // 描边走的是独立着色器，不会跟着脸颊变形 → 脸部和贴纸不画描边
   if (['face1', 'Cheek', 'kou1', 'she1', 'emo1', 'emo3'].includes(m.name) && m.userData.outlineParameters) m.userData.outlineParameters.visible = false;
 }
 const faceHit = new FaceHit(mesh, ['face1']);
+// 头发描边：OutlineEffect 每帧把 mesh.material 换成自己的描边材质再画。
+// scene.onBeforeRender 时已经换好了，趁这时给垂在脸颊前的发丝的描边材质也打上同样的位移
+const hairSlots = mesh.material.flatMap((m, i) => (HAIR_ON_CHEEK.has(m.name) ? [i] : []));
+const patchedOutlines = new WeakSet();
+scene.onBeforeRender = () => {
+  for (const i of hairSlots) {
+    const m = mesh.material[i];
+    if (m.type !== 'OutlineEffect' || patchedOutlines.has(m)) continue;
+    patchedOutlines.add(m);
+    patchOutlineMaterial(m);
+  }
+};
 
 /*
  * 音游的"脸颊点"（参考站同款）：右脸颊上离 (0.47, 17.15, 0.34)（参考坐标）最近的皮肤顶点。

@@ -31,16 +31,20 @@ export const uniforms = {
   uCheekSpring: { value: 0 },
   uRadius: { value: PT * 0.2 },
   uCup: { value: 0 },
+  // 前发避让：拉扯量（参考坐标）超过 slack 才开始推发丝，knee 是起步的柔和过渡，follow 是跟随比例
+  // 实测不推发丝时，拉到约 0.12 脸颊开始碰到发丝（单手上限 ≈0.16，音游 ≈0.26）
+  uHairSlack: { value: 0.11 },
+  uHairKnee: { value: 0.03 },
+  uHairFollow: { value: 0.8 },
 };
 
 const HEAD = /* glsl */ `
 uniform vec4 uPokes[${POKE_SLOTS}];
 uniform vec3 uGrab, uDelta;
-uniform float uPullSides, uCheekSpring, uRadius;
+uniform float uPullSides, uCheekSpring, uRadius, uHairSlack, uHairKnee, uHairFollow;
 uniform vec2 uCheekJiggle;
 attribute float aCheekMobility;
 attribute float aCheekWeight;
-varying vec3 vRefPos;
 `;
 
 // 戳：凹陷 → 回弹时脸颊鼓起，并向四周摊开
@@ -96,7 +100,8 @@ if(uPullSides<.5){
   float down=max(-uDelta.y,0.0);
   float softPad=smoothstep(16.68,16.96,rp.y)*(1.0-.72*rim);
   float verticalTravel=max(uDelta.y,0.0)*(1.0-.5*rim)-down*.86*softPad;
-  rd+=vec3(lateralTravel,verticalTravel,uDelta.z+.32*outward+.30*down*softPad)*pad;
+  // 脸颊外缘（被发丝盖住的那圈）少往前顶，免得从发丝里拱出来
+  rd+=vec3(lateralTravel,verticalTravel,uDelta.z+.32*outward*(1.0-.55*rim)+.30*down*softPad)*pad;
  }
 }
 {
@@ -105,6 +110,27 @@ if(uPullSides<.5){
   *(1.0-smoothstep(17.12,17.43,rp.y))*smoothstep(-.56,-.12,rp.z)*aCheekMobility;
  float jiggle=mix(uCheekJiggle.x,uCheekJiggle.y,step(0.0,rp.x))*jiggleWeight;
  rd+=vec3(sign(rp.x)*.078,-(rp.y-17.02)*.27,.074)*jiggle;
+}
+`;
+
+// 前发：只在脸颊快要顶穿发丝时才被推开。
+// 发丝和脸颊之间本来有一点空隙：拉扯量没超过这段余量（uHairSlack）时发丝完全不动，
+// 超过后经过一段柔和的过渡（uHairKnee）才开始跟随，而且只跟随超出的那部分。
+// 整段平移（不用皮肤那种局部高斯，否则发丝上会鼓出一个包），往上过渡到发根不动；
+// 只横向 + 略往前，不上下拉长发丝
+const HAIR_PULL = /* glsl */ `
+{
+ float lateral=abs(rp.x);
+ float band=smoothstep(.22,.46,lateral)*(1.0-smoothstep(17.15,17.65,rp.y))
+  *smoothstep(15.7,16.45,rp.y)*smoothstep(-.45,-.12,rp.z);
+ float sameSide=sign(rp.x)*sign(uGrab.x);
+ if(uPullSides>.5 && (sameSide>0.0 || uPullSides>1.5)){
+  float outward=max(uDelta.x*sign(uGrab.x),0.0);
+  float t=outward-uHairSlack;
+  float k=max(uHairKnee,1e-4);
+  float excess=t<=-k?0.0:t>=k?t:(t+k)*(t+k)/(4.0*k);
+  rd+=vec3(sign(rp.x)*excess*uHairFollow,0.0,excess*.3)*band;
+ }
 }
 `;
 
@@ -125,26 +151,41 @@ const BLUSH = /* glsl */ `
 }
 `;
 
+const vertexBody = (kind) => `
+vec3 rp=vec3(position.x/${REF_SX.toFixed(4)},position.y-(${REF_DY.toFixed(4)}),position.z-(${REF_DZ.toFixed(4)}));
+${kind === 'hair' ? '' : 'vRefPos=rp;'}
+vec3 rd=vec3(0.0);
+${kind === 'face' ? PULL : kind === 'hair' ? HAIR_PULL : ''}
+${kind === 'hair' ? '' : POKE}
+transformed+=vec3(rd.x*${REF_SX.toFixed(4)},rd.y,rd.z);
+`;
+
+const injectVertex = (shader, kind) => {
+  Object.assign(shader.uniforms, uniforms);
+  shader.vertexShader = HEAD + (kind === 'hair' ? '' : 'varying vec3 vRefPos;\n')
+    + shader.vertexShader.replace('#include <morphtarget_vertex>', `#include <morphtarget_vertex>\n${vertexBody(kind)}`);
+};
+
 /**
- * kind: 'face' = 拉 + 戳 + 泛红；'mouth' = 只跟随戳（口腔、舌头，避免穿模）
+ * kind: 'face' = 拉 + 戳 + 泛红；'mouth' = 只跟随戳（口腔、舌头，避免穿模）；
+ * 'hair' = 只跟随拉（垂在脸颊前的发丝随脸颊一起被拉开，避免脸颊从头发里穿出来）
  */
 export function patchMaterial(material, kind) {
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms);
-    const body = `
-vec3 rp=vec3(position.x/${REF_SX.toFixed(4)},position.y-(${REF_DY.toFixed(4)}),position.z-(${REF_DZ.toFixed(4)}));
-vRefPos=rp;
-vec3 rd=vec3(0.0);
-${kind === 'face' ? PULL : ''}
-${POKE}
-transformed+=vec3(rd.x*${REF_SX.toFixed(4)},rd.y,rd.z);
-`;
-    shader.vertexShader = HEAD + shader.vertexShader.replace('#include <morphtarget_vertex>', `#include <morphtarget_vertex>\n${body}`);
+    injectVertex(shader, kind);
+    if (kind === 'hair') return;
     let frag = `uniform vec2 uPullBlush, uBlushHeight;\nuniform float uCup;\nvarying vec3 vRefPos;\n` + shader.fragmentShader;
     if (kind === 'face') frag = frag.replace('#include <color_fragment>', `#include <color_fragment>\n${BLUSH}`);
     shader.fragmentShader = frag;
   };
   material.customProgramCacheKey = () => `cheek-${kind}`;
+  material.needsUpdate = true;
+}
+
+/** OutlineEffect 的描边材质用的是独立着色器，头发描边也要跟着发丝一起位移 */
+export function patchOutlineMaterial(material) {
+  material.onBeforeCompile = (shader) => injectVertex(shader, 'hair');
+  material.customProgramCacheKey = () => 'cheek-hair-outline';
   material.needsUpdate = true;
 }
 
