@@ -25,7 +25,6 @@ export function prepareSymbols(mesh, symbolMaterial, eggs) {
 export function createFace(ctx) {
   const { cfg, mesh, model, pose, s, pokes, sfx, symbols, debug } = ctx;
   const { morphs: morphNames, symbolSpots = [], materials } = cfg.model;
-  const sheet = cfg.personality.expressions;
   const morphs = new MorphDriver(mesh, morphNames);
   const blink = new BlinkRhythm();
   blink.onTick = (second) => sfx.blinkTick(second);
@@ -91,7 +90,8 @@ export function createFace(ctx) {
     for (const b of pose.eyeBones) b.quaternion.multiply(_q);
 
     const targets = { blink: p.blink };
-    sheet(p, (k, v) => { targets[k] = (targets[k] ?? 0) + v; });
+    // 表情表每帧读取：工作台（?studio）切换方案时会整个替换
+    cfg.personality.expressions(p, (k, v) => { targets[k] = (targets[k] ?? 0) + v; });
     if (debug.morphs) Object.assign(targets, debug.morphs);
     morphs.apply(targets, dt);
   };

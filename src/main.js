@@ -27,12 +27,15 @@ import { createRhythm, NO_RHYTHM } from './rhythm/index.js';
 import { Sfx } from './audio/sfx.js';
 import { setupToolbar } from './ui/toolbar.js';
 import { applyTheme } from './ui/theme.js';
+import { setupSiteLinks, setupAnalytics } from './ui/site.js';
 
 const cfg = pickCharacter();
 const { model: modelCfg, personality, presentation } = cfg;
 const BAKE = new URLSearchParams(location.search).has('bake');
 const app = document.querySelector('#app');
 
+setupSiteLinks();
+setupAnalytics();
 applyCharacterText(presentation);
 applyTheme(presentation.theme);
 configureRig(modelCfg);
@@ -141,3 +144,8 @@ window.__face = {
   get state() { return { holdId: s.holdId, pullSides: s.pullSides, pulling: s.pulling, mode: s.mode, delta: s.delta.length(), target: s.target.length() / calib.faceWidth }; },
 };
 window[`__${cfg.id}`] = window.__face;
+
+// 表情工作台（?studio）：对比性格方案、浏览模型表情。只在需要时加载
+if (new URLSearchParams(location.search).has('studio')) {
+  import('./ui/studio.js').then((m) => m.openStudio(ctx));
+}

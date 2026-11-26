@@ -41,7 +41,7 @@ export function applyCharacterText(presentation) {
   document.title = text.title;
   document.querySelector('#loader-label').textContent = text.loading;
   const img = document.querySelector('#loader img');
-  if (img && images.loading) { img.src = images.loading; img.alt = name; }
+  if (img && images.loading) { img.src = images.loading; img.alt = name ?? ''; img.hidden = false; }
 }
 
 // 物理引擎只在 ?bake 时用（给头发烘焙自然垂落的姿势），动态加载、与模型并行

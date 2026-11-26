@@ -98,6 +98,7 @@ html, body {
   border-radius: 18px;
   box-shadow: 0 14px 36px rgba(var(--shade), .22), 0 0 0 4px rgba(255, 255, 255, .7);
 }
+.loader-card img[hidden] { display: none; }
 .loader-bar {
   height: 6px; border-radius: 6px; overflow: hidden;
   background: rgba(255, 255, 255, .7);

@@ -1,9 +1,33 @@
-# 捏捏达妮娅
+# MMD 捏脸模板
 
-《鸣潮》达妮娅的捏脸小网页：戳脸、单手 / 双手拉脸、捧脸，还有一首歌的音游。
-玩法和动效参考了 [菲比捏脸模拟器](https://phoebe-face-lab.vercel.app/)，在线体验：<https://daniya-face.pages.dev>
+给 MMD（PMX）角色做捏脸小网页的模板：戳脸、单手 / 双手拉脸、捧脸，还有一首歌的音游。
+引擎和角色分离：换一个模之屋模型，写一份角色配置，就是另一个角色的捏脸站。
 
-## 玩法
+示例站：[捏捏达妮娅](https://daniya-face.pages.dev)（《鸣潮》达妮娅，本仓库自带的示例角色）。
+玩法和动效参考了 [菲比捏脸模拟器](https://phoebe-face-lab.vercel.app/)。
+
+## 做你自己的角色
+
+1. 在 GitHub 上点 **Use this template** 新建仓库（或 `git clone` 本仓库），`npm install`
+2. 把角色的 PMX 模型（含贴图）放进 `public/models/<目录>/`，立绘放进 `public/`
+3. 让 AI agent 按 [skills/port-character/SKILL.md](skills/port-character/SKILL.md) 做（Claude Code、Codex、Cursor、OpenCode 等都会从 [AGENTS.md](AGENTS.md) 找到它），
+   或者自己按 [docs/PORTING.md](docs/PORTING.md) 一步步来：
+
+```bash
+npm run port -- new <id> --model public/models/<目录>/<模型>.pmx --name <角色名>   # 探测模型、生成配置
+npm run port -- palette <id> --image public/<立绘>                                  # 取色
+npm run port -- theme <id> --colors '#主色,#辅色,#点缀色'                            # 生成配色
+npm run port -- check <id>                                                         # 检查
+npm run port -- default <id>                                                       # 设为网站默认角色
+npm run dev                                                                        # 打开 ?char=<id>&studio 挑选性格方案
+```
+
+4. 改 [site.json](site.json)：左上角链接、Cloudflare Pages 项目名、统计 token（**不要沿用本仓库的**）
+5. `./deploy.ps1 -Prod` 部署到 Cloudflare Pages
+
+模型、音乐、图片有版权，不要提交到仓库（`.gitignore` 已排除），也请遵守模型作者的使用条款。
+
+## 玩法（以示例角色达妮娅为例）
 
 | 工具 | 操作 |
 | --- | --- |
@@ -18,7 +42,7 @@
 
 - Vite + three.js 0.170（MMDLoader 读 PMX 模型，OutlineEffect 描边）
 - 脸颊形变全在 GPU 着色器里（`src/rig/`）：戳的冲击场、拉扯的软垫场、回弹弹簧，只作用在脸部皮肤；垂在脸颊前的前发只在快穿模时被推开
-- 表情 = 模型自带的表情 morph 组合：引擎只算通用的情绪信号（`src/expression/signals.js`），每个角色用自己的表情表把信号换成表情（`src/characters/<角色>/expressions.js`）；漫画符号是 UV 表情（MMDLoader 不支持，`src/rig/symbols.js` 自己实现）
+- 表情 = 模型自带的表情 morph 组合：引擎只算通用的情绪信号（`src/expression/signals.js`），每个角色用自己的表情表把信号换成表情（性格方案在 `src/characters/<角色>/proposals/`，`?studio` 工作台里对比挑选）；漫画符号是 UV 表情（MMDLoader 不支持，`src/rig/symbols.js` 自己实现）
 - 开放哪些动作、界面配色都由角色配置决定：工具栏按 `personality.actions` 生成，配色是 `presentation.theme` 写入的 CSS 变量
 - 头发的静止姿势是离线跑一次物理烘焙出来的（角色目录下的 `hairRest.json`），运行时不开物理，不穿模、不飘
 - 音效：拉脸用采样，其它用 Web Audio 现场合成（`src/audio/sfx.js`）
@@ -39,9 +63,9 @@ src/
   audio/  ui/        音效；工具栏（按配置生成）、主题与样式
 ```
 
-换一个角色：见 [docs/PORTING.md](docs/PORTING.md)。
+站点级设置（默认角色、左上角链接、部署项目名、统计）在 `site.json`；移植工具在 `scripts/port/`。
 
-## 本地运行
+## 本地运行示例角色
 
 素材有版权，**不在仓库里**，需要自己准备好放到对应位置：
 
@@ -60,7 +84,7 @@ npm run build
 
 换模型或换形态后，用 `http://localhost:5173/?bake` 打开页面，控制台里复制 `window.__bakedHairRest` 存为 `src/characters/<角色>/hairRest.json`（头发的静止姿势）。
 
-部署：`./deploy.ps1`（Cloudflare Pages，本地构建后上传，模型等素材随 `dist` 一起上传）。
+部署：`./deploy.ps1`（Cloudflare Pages，本地构建后上传，模型等素材随 `dist` 一起上传；项目名取 `site.json`）。
 
 ## 致谢与版权
 

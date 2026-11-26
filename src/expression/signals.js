@@ -9,12 +9,12 @@ const { clamp, smoothstep, damp } = THREE.MathUtils;
  * 节奏参数来自 personality.behavior；某种反应关掉时对应信号恒为 0。
  */
 export function createSignals({ s, sfx, symbols, debug, mesh, symbolCenter, symbolMaterial }) {
-  const b = s.behavior;
   let pokeFace = 0, sulkGate = 0, sulkPuffed = false;
   let shyAmt = 0, enjoyAmt = 0, dizzyAmt = 0;
   let eggFade = 0, shownEgg = null;
 
   return function update({ dt, now, rhythmActive }) {
+    const b = s.behavior; // 每帧读取：工作台切换方案时会整个替换
     const holding = s.holdId !== null;
     const h = s.pullAmount;
     const poked = now < s.pokeUntil;

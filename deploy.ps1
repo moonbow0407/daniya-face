@@ -1,15 +1,18 @@
 # 本地构建后上传到 Cloudflare Pages（模型在 .gitignore 里，所以不走 Git 自动构建）
 # 用法：
 #   .\deploy.ps1          部署预览版（得到一个临时链接，不影响正式站）
-#   .\deploy.ps1 -Prod    部署正式版（更新 daniya-face.pages.dev）
+#   .\deploy.ps1 -Prod    部署正式版（更新 <项目名>.pages.dev）
+# 项目名默认取 site.json 的 cloudflare.pagesProject，也可以 -Project 指定。
 # 第一次运行会打开浏览器让你登录 Cloudflare，并创建项目。
 param(
     [switch]$Prod,
-    [string]$Project = 'daniya-face'
+    [string]$Project
 )
 
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
+if (-not $Project) { $Project = (Get-Content site.json -Raw -Encoding utf8 | ConvertFrom-Json).cloudflare.pagesProject }
+if (-not $Project) { throw 'site.json 里没有 cloudflare.pagesProject，或用 -Project 指定' }
 
 if (-not (Test-Path 'public/models')) {
     throw 'public/models 不存在，模型缺失会导致线上页面加载失败'

@@ -60,7 +60,7 @@ export function createRhythmView({ root, finaleImage, finaleAlt, hintText }) {
   finale.hidden = true;
   finale.innerHTML = `
     <div class="rhythm-finale-card" role="dialog" aria-label="音游结算">
-      <img src="${finaleImage}" alt="${finaleAlt}" width="850" height="850" />
+      ${finaleImage ? `<img src="${finaleImage}" alt="${finaleAlt ?? ''}" width="850" height="850" />` : ''}
       <div class="rhythm-finale-stats"></div>
       <div class="rhythm-finale-actions">
         <button type="button" data-act="again">再来一次</button>
