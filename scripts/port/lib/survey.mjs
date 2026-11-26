@@ -89,6 +89,12 @@ export function survey(model) {
   const mouthMats = byRole(ROLES.mouth);
   const emoMats = byRole(ROLES.emo);
   const hitTest = skinMats.filter((m) => m.center[2] > 0).map((m) => m.name);
+  // 眼睛附近的小材质（眼珠、眼白、高光、睫毛、眉毛线稿）：戳脸颊时跟着凹，否则会从皮肤后面露出来
+  const eyeY = byRole(ROLES.eye)[0]?.center[1] ?? model.bones['右目']?.[1];
+  const taken = new Set([...skinMats, ...byRole(ROLES.mouth), ...byRole(ROLES.hair), ...byRole(ROLES.emo)].map((m) => m.name));
+  const followPoke = eyeY === undefined ? [] : model.materials
+    .filter((m) => m.count && m.count < 6000 && !taken.has(m.name) && Math.abs(m.center[1] - eyeY) < 0.25 && m.center[2] > 0 && Math.abs(m.center[0]) < 0.3)
+    .map((m) => m.name);
   if (!skinMats.length) notes.push('没找到脸部皮肤材质（face/顔），必须手动填 materials.skin 和 hitTest');
   if (!mouthMats.length) notes.push('没找到口腔/舌头材质，戳脸时嘴里可能穿模');
 
@@ -150,6 +156,7 @@ export function survey(model) {
       skin: skinMats.map((m) => m.name),
       hitTest,
       mouth: mouthMats.map((m) => m.name),
+      followPoke,
       hairOnCheek,
       symbol,
       noOutline: [...new Set([...skinMats, ...mouthMats, ...emoMats].map((m) => m.name))],

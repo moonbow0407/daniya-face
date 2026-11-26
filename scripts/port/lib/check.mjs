@@ -34,7 +34,7 @@ export async function check({ id, root, loadModule }) {
   if (pmx) {
     const mats = new Set(pmx.materials.map((x) => x.name));
     const mt = m.materials ?? {};
-    for (const key of ['skin', 'hitTest', 'mouth', 'hairOnCheek', 'noOutline']) {
+    for (const key of ['skin', 'hitTest', 'mouth', 'followPoke', 'hairOnCheek', 'noOutline']) {
       for (const n of mt[key] ?? []) if (!mats.has(n)) errors.push(`model.materials.${key} 里的材质 "${n}" 在模型里不存在`);
     }
     if (!mt.skin?.length) errors.push('model.materials.skin 为空：至少要有脸部皮肤材质');
@@ -67,6 +67,8 @@ export async function check({ id, root, loadModule }) {
   const song = p.actions?.rhythm?.song;
   if (p.actions?.rhythm) {
     if (!song?.notes?.length) errors.push('personality.actions.rhythm.song 缺失或没有谱面（从 src/rhythm/charts/ 里 import 一首）');
+    const { tap = 'poke' } = p.actions.rhythm;
+    if (!['poke', 'single'].includes(tap)) errors.push(`personality.actions.rhythm.tap 只能是 'poke' 或 'single'（现在是 ${JSON.stringify(tap)}）`);
     else if (!existsSync(pub(song.url))) warnings.push(`音游歌曲文件不存在：public${song.url}（音游会提示"音乐加载失败"）`);
   }
   const uv = new Set(pmx?.uvMorphs.map((u) => u.name) ?? []);
@@ -113,10 +115,10 @@ function checkSheet(label, sheet, { m, pmx, uv, errors, warnings, ok }) {
 function fakeSignals(eggs) {
   const base = {
     blink: 0, open: 1, h: 0, rh: 0, rhythmActive: false, pullSides: 1, left: 0, right: 0,
-    es: { mouth: 0, surprise: 0 }, shy: 0, enjoy: 0, dizzy: 0, afterglow: 0, sulk: 0,
-    pokeFace: 0, pokeRaw: 0, combo: 0, roll: 0, egg: null, eggFade: 0, pokes: { reactions: [0, 0], smiles: [0, 0] },
+    es: { mouth: 0, surprise: 0 }, shy: 0, enjoy: 0, rub: 0, dizzy: 0, afterglow: 0, sulk: 0,
+    pokeFace: 0, pokeRaw: 0, pokeAfter: 0, combo: 0, roll: 0, egg: null, eggFade: 0, pokes: { reactions: [0, 0], smiles: [0, 0] },
   };
-  const all = { ...base, blink: 1, open: 0, h: 1, rh: 1, rhythmActive: true, pullSides: 2, left: 1, right: 1, es: { mouth: 1, surprise: 1 }, shy: 1, enjoy: 1, dizzy: 1, afterglow: 1, sulk: 1, pokeFace: 1, pokes: { reactions: [1, 1], smiles: [1, 1] } };
+  const all = { ...base, blink: 1, open: 0, h: 1, rh: 1, rhythmActive: true, pullSides: 2, left: 1, right: 1, es: { mouth: 1, surprise: 1 }, shy: 1, enjoy: 1, rub: 1, dizzy: 1, afterglow: 1, sulk: 1, pokeFace: 1, pokeAfter: 1, pokes: { reactions: [1, 1], smiles: [1, 1] } };
   const egg = eggs?.list?.[0] ?? eggs?.dizzy;
   return [base, all, { ...all, roll: 0.99, combo: 5 }, { ...all, rhythmActive: false, rh: 0 }, ...(egg ? [{ ...all, egg, eggFade: 1 }] : [])];
 }
@@ -128,11 +130,11 @@ function fakeSignals(eggs) {
 const PHYSICAL = new Set(['blink', 'browDown', 'mouthWideL', 'mouthWideR', 'mouthNarrow', 'mouthForward']);
 const NEUTRAL = {
   blink: 0, open: 1, h: 0, rh: 0, rhythmActive: false, pullSides: 1, left: 0, right: 0,
-  es: { mouth: 0, surprise: 0 }, shy: 0, enjoy: 0, dizzy: 0, afterglow: 0, sulk: 0,
-  pokeFace: 0, pokeRaw: 0, combo: 0, roll: 0, egg: null, eggFade: 0, pokes: { reactions: [0, 0], smiles: [0, 0] },
+  es: { mouth: 0, surprise: 0 }, shy: 0, enjoy: 0, rub: 0, dizzy: 0, afterglow: 0, sulk: 0,
+  pokeFace: 0, pokeRaw: 0, pokeAfter: 0, combo: 0, roll: 0, egg: null, eggFade: 0, pokes: { reactions: [0, 0], smiles: [0, 0] },
 };
 const ACTION_SIGNALS = {
-  poke: { pokeFace: 1, pokeRaw: 1, combo: 1, pokes: { reactions: [0.6, 0], smiles: [0.3, 0] } },
+  poke: { pokeFace: 1, pokeRaw: 1, pokeAfter: 1, combo: 1, pokes: { reactions: [0.6, 0], smiles: [0.3, 0] } },
   single: { h: 1, pullSides: 1, right: 1, es: { mouth: 1, surprise: 1 } },
   double: { h: 1, pullSides: 2, left: 1, right: 1, es: { mouth: 1, surprise: 1 } },
   cup: { pullSides: 0, es: { mouth: 0.55, surprise: 0.2 }, shy: 0.3, enjoy: 1 },

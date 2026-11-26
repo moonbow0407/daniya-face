@@ -34,7 +34,7 @@ export function prepareSymbols(mesh, symbolMaterial, eggs = {}) {
 export function createFace(ctx) {
   const { cfg, mesh, model, pose, s, pokes, sfx, symbols, debug } = ctx;
   const { morphs: morphNames, symbolSpots = [], materials } = cfg.model;
-  const morphs = new MorphDriver(mesh, morphNames);
+  const morphs = new MorphDriver(mesh, morphNames, cfg.model.instantMorphs);
   const blink = new BlinkRhythm();
   blink.onTick = (second) => sfx.blinkTick(second);
   const updateVertexSymbols = createVertexSymbols(mesh, cfg.model);

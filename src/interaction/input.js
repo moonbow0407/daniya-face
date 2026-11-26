@@ -47,6 +47,27 @@ export function createInput(ctx) {
   const grabCheek = ({ x, y }) => s.grab.set(x < 0 ? -0.55 : 0.55, clamp(y, 16.88, 17), 0.24);
   const rhythmHoldTarget = () => s.target.set(Math.sign(s.grab.x) * PT() * s.limits.rhythm * Math.tanh(RHYTHM_HOLD_RAW / 0.1), 0, 0);
 
+  /** 音游点按的动作（角色配置 actions.rhythm.tap）：'poke' 戳（默认）/ 'single' 单手捏一下；长按总是单手拉住 */
+  const rhythmCfg = ctx.cfg.personality.actions.rhythm ?? {};
+  const rhythmAct = (act) => (act === 'poke' && rhythmCfg.tap === 'single' ? 'pinch' : act);
+
+  /**
+   * 捏一下：不按住，给被捏的一侧一个向外的冲量，靠松手的弹簧自己弹回；表情借用戳的短反应（音游里交互音效静音，只有打击音）。
+   * 冲量控制在峰值约 3.5% 脸宽，不超过前发的余量（hairAvoid.slack），否则前发会跟着一进一出地闪；
+   * 也不叠加松手的"啵"抖动（速度太快，脸颊会在发丝前后来回穿）
+   */
+  function pinchTap(ref) {
+    if (s.holdId !== null) return;
+    s.pullSides = 1;
+    grabCheek(ref);
+    const sx = Math.sign(s.grab.x);
+    s.releaseDir.set(sx, 0, 0);
+    s.vel.set(sx * PT() * 1.1, 0, 0);
+    s.jiggle.armed = false;
+    s.pokeUntil = performance.now() + 550;
+    s.roll = Math.random();
+  }
+
   // 双指捏合缩放（手机）
   const touches = new Map();
   let pinchStart = null;
@@ -76,6 +97,8 @@ export function createInput(ctx) {
       act = rh.press(e);
       if (act !== 'single') touchRing(e);
       if (!act) { pokes.tap(hit.ref.clone(), 0.55); return; }
+      act = rhythmAct(act);
+      if (act === 'pinch') { pinchTap(hit.ref); return; }
     }
 
     if (act === 'poke') {
@@ -217,9 +240,11 @@ export function createInput(ctx) {
     e.preventDefault();
     sfx.ensureContext();
     const hit = model.rhythmHit();
-    const act = rh.press(e);
-    if (!act) { pokes.tap(hit.ref.clone(), 0.55); return; }
+    const pressed = rh.press(e);
+    if (!pressed) { pokes.tap(hit.ref.clone(), 0.55); return; }
+    const act = rhythmAct(pressed);
     if (act === 'poke') { poke(hit.ref, 1.5); return; }
+    if (act === 'pinch') { pinchTap(hit.ref); return; }
     s.keyHoldCode = e.code;
     s.holdId = 'key';
     s.pullSides = 1;

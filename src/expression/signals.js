@@ -9,7 +9,7 @@ const { clamp, smoothstep, damp } = THREE.MathUtils;
  * 节奏参数来自 personality.behavior；某种反应关掉时对应信号恒为 0。
  */
 export function createSignals({ s, sfx, symbols, debug, mesh, symbolCenter, symbolMaterial }) {
-  let pokeFace = 0, sulkGate = 0, sulkPuffed = false;
+  let pokeFace = 0, pokeAfter = 0, sulkGate = 0, sulkPuffed = false;
   let shyAmt = 0, enjoyAmt = 0, dizzyAmt = 0;
   let eggFade = 0, shownEgg = null;
 
@@ -19,6 +19,7 @@ export function createSignals({ s, sfx, symbols, debug, mesh, symbolCenter, symb
     const h = s.pullAmount;
     const poked = now < s.pokeUntil;
     pokeFace = clamp(pokeFace + ((poked ? 1 : -1) * dt) / (poked ? 0.09 : 0.3), 0, 1);
+    pokeAfter = poked ? 1 : pokeAfter * Math.exp(-dt / 1.1); // 戳完的余韵：比 pokeFace 长，约 2~3 秒淡完
 
     // 生闷气：拉久了松手，脸还红着
     let sulk = 0;
@@ -62,10 +63,12 @@ export function createSignals({ s, sfx, symbols, debug, mesh, symbolCenter, symb
       shy: shyAmt * calm,
       enjoy: enjoyAmt,
       dizzy: dizzyAmt,
+      rub: s.cupHeld ? s.rubLevel : 0, // 捧着时揉得多快（揉晕之前就有）
       afterglow: smoothstep(s.afterglow, 0, 0.45),
       sulk,
       pokeFace: smoothstep(pokeFace, 0, 1),
       pokeRaw: pokeFace,
+      pokeAfter,
       combo: s.pokeCombo,
       roll: debug.roll ?? s.roll,
       egg: shownEgg,

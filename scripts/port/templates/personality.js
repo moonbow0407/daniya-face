@@ -16,6 +16,8 @@ export default {
     single: { label: '单手拉脸', limit: 0.075 },
     double: { label: '双手拉脸', limit: 0.048 },
     cup: { label: '捧脸', push: 0.035 },
+    // 音游：点按默认是戳（tap: 'poke'），长按是单手拉住；tap: 'single' 时点按改成单手捏一下，
+    // 点按和长按就都是单手捏（只是时间长短不同），直接复用单手拉的表情
     // rhythm: { label: '音游', song: honeyLemon, limit: 0.12, hint: '点按 / 空格 = 戳脸 · 长按 = 拉脸' },
   },
   defaultAction: 'poke',

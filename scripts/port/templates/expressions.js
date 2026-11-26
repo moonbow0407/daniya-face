@@ -9,10 +9,11 @@
  *   blink, open        眨眼 / 睁眼程度（眼部表情乘 open，免得和眨眼叠在一起变形）
  *   roll               本次动作开始时掷的随机数：roll < 0.7 用招牌，否则用变体（工作台可固定看招牌或变体）
  *   pokeFace, combo    刚被戳（约 0.5 秒）/ 连戳次数（间隔 < 0.7 秒）
+ *   pokeAfter          戳完的余韵（戳时为 1，约 2~3 秒淡完）：想让笑容、生气停留久一点就用它
  *   pokes.reactions / pokes.smiles  戳完的余韵 [右脸, 左脸]
  *   h, left, right     拉扯程度、左右脸各被拉多少；pullSides 0 捧 / 1 单手 / 2 双手
  *   es.mouth / es.surprise  脸被托住（捧或拉）时的嘴型 / 惊讶
- *   shy, enjoy         捧住后的害羞 / 享受；dizzy 揉晕；afterglow 捧完松手；sulk 拉久了松手生闷气
+ *   shy, enjoy         捧住后的害羞 / 享受；rub 正在揉（揉得多快）；dizzy 揉晕；afterglow 捧完松手；sulk 拉久了松手生闷气
  *   rh, rhythmActive   音游长按程度 / 是否在音游中
  *   egg, eggFade       拉脸彩蛋（personality.eggs）及其淡入程度
  * 数值一般 0.3~1：招牌表情要给足（0.6~1），叠得越多每个越小。完整写法参考 src/characters/daniya/expressions.js。

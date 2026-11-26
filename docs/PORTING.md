@@ -50,12 +50,14 @@ npm run port -- new <id> --model public/models/<模型目录>/<模型>.pmx --nam
 | `texDir` | 贴图目录在磁盘上的真实名字。PMX 里写的大小写常和磁盘不一致（`TEX` / `tex`），服务器区分大小写，对不上时模型只剩描边；探测脚本自动填，`check` 逐张核对 |
 | `calibration` | **最关键**。形变公式、点击区域、抓取点都写在"参考坐标"里。量出新模型的嘴、鼻尖、眼睛高度和睫毛外缘 x，与参考值（嘴 16.99、鼻尖 17.26、眼 17.51、睫毛外缘 0.813）对齐：`dy` ≈ 模型高度 − 参考高度（三处取平均；达妮娅约 −0.50，最终用 −0.49）；`sx` 先用睫毛外缘 x 之比估初值（达妮娅估出约 0.93），再看戳、拉的位置是否落在脸颊肉上微调（达妮娅最终 0.89）；`dz` 先填 0，看戳脸凹陷深浅再微调 |
 | `camera` | 全景 / 特写的取景高度（模型坐标），一般在脸部中心附近 |
-| `materials` | `skin` 脸部皮肤，`hitTest` 点击检测用的皮肤，`mouth` 口腔舌头，`hairOnCheek` 垂在脸颊前的前发（常叫 `Bangs` / `前髪`；在工作台"材质"里逐个隐藏确认，写错了拉脸会穿模），`symbol` 漫画符号贴片，`noOutline` 不画描边的材质 |
+| `materials` | `skin` 脸部皮肤，`hitTest` 点击检测用的皮肤，`mouth` 口腔舌头，`followPoke` 眼睛、睫毛这类独立材质（只跟着戳凹，否则戳脸颊上部时眼珠会从皮肤后面露出来），`hairOnCheek` 垂在脸颊前的前发（常叫 `Bangs` / `前髪`；在工作台"材质"里逐个隐藏确认，写错了拉脸会穿模），`symbol` 漫画符号贴片，`noOutline` 不画描边的材质 |
 | `bones` | `head`、`neck`、`eyes`；`restPose` 把 A 字型手臂放下 |
 | `morphs` | 语义名 → 模型表情名。模型里没有的删掉即可，表情表里用到它的地方会被跳过 |
 | `symbolSpots` | 漫画符号的预设位置表情；模型没有符号贴片就删掉 |
+| `instantMorphs`（可选） | 不做平滑的语义名。有的模型某个表情开到一半很难看（比如眯眼笑半开时眼珠从睫毛下露出来），列在这里就只按表情表给的值显示，过渡由表情表自己处理（比如用眨眼衔接，见 `src/characters/lily/expressions.js` 末尾） |
 | `vertexSymbols`（可选） | 用顶点表情做的漫画符号（💢、竖线等，常在 emo 类小材质上）：`{ material, list: { 语义名: { at, scale, tint, clip } } }`。引擎把它们缩小、摆到 `at`、淡入，并重新上色成和贴片符号（达妮娅的汗滴）一样的画风；`clip` 剪掉贴图集里漏进来的相邻图案 |
 | `hairAvoid` | 前发避让，见第 5 步 |
+| `pokeFade`（可选） | 戳凹在眼睛下方淡出的高度（参考坐标 `[开始, 消失]`，默认 `[17.30, 17.46]`）。闭眼时戳脸颊上部、眼珠从下眼睑露出来，就把它调低 |
 
 ### 3.2 性格层 `expressions.js` + `personality.js`
 
@@ -64,7 +66,7 @@ npm run port -- new <id> --model public/models/<模型目录>/<模型>.pmx --nam
 
 | 字段 | 说明 |
 | --- | --- |
-| `actions` | 开放的动作，按顺序出现在右侧工具栏：`cup` 捧脸、`poke` 戳脸、`single` 单手拉脸、`double` 双手拉脸、`rhythm` 音游。不写就不出现。`label` 是按钮文字，`limit` / `push` 是幅度上限，`rhythm` 还要 `song`（`rhythm/charts/` 里的歌）和 `hint` |
+| `actions` | 开放的动作，按顺序出现在右侧工具栏：`cup` 捧脸、`poke` 戳脸、`single` 单手拉脸、`double` 双手拉脸、`rhythm` 音游。不写就不出现。`label` 是按钮文字，`limit` / `push` 是幅度上限，`rhythm` 还要 `song`（`rhythm/charts/` 里的歌）和 `hint`；可选 `tap`：点按是 `'poke'` 戳（默认）还是 `'single'` 单手捏一下。长按总是单手捏住，所以选 `'single'` 时音游直接复用单手拉的表情，不用另做 |
 | `defaultAction` | 进页面时选中的工具 |
 | `behavior` | 反应节奏：`cup.shy` / `cup.enjoy` 捧住多少秒后开始害羞 / 享受；`dizzy.energy` 揉多久会晕；`afterglow.minHold` 捧够多久松手才有余韵；`sulk` 拉久了会不会生闷气。设为 `false` 就没有这种反应 |
 | `expressions` | 表情表 `(p, add) => {...}`：把引擎的信号 `p` 换成语义表情，`add('eyeSmile', 0.9 * p.enjoy)`。招牌 / 变体用 `p.roll`（每次动作开始掷一次的随机数），连戳用 `p.combo`。信号列表见模板 `scripts/port/templates/expressions.js` 开头和 `src/expression/signals.js` |
@@ -95,7 +97,7 @@ npm run port -- new <id> --model public/models/<模型目录>/<模型>.pmx --nam
 | 检查 | 做法 | 不对时调什么 |
 | --- | --- | --- |
 | 点击区域 | 鼠标悬停脸颊，光标变成手 | `calibration`、`materials.hitTest` |
-| 戳脸 | 两侧脸颊各戳几下：凹陷位置在脸颊肉上，弹回自然 | `calibration` |
+| 戳脸 | 两侧脸颊各戳几下：凹陷位置在脸颊肉上，弹回自然；闭着眼时戳脸颊上部，眼珠不从下眼睑露出来 | `calibration`、`materials.followPoke`、`pokeFade` |
 | 单手 / 双手拉脸 | 拉到最大：被拉的是脸颊肉，不撕裂耳前；松手有回弹抖动 | `calibration` |
 | 前发穿模 | 先在工作台"材质"里确认挡脸颊的头发就是 `hairOnCheek`，再按下面的方法找 `slack` | `materials.hairOnCheek`、`hairAvoid` |
 | 捧脸 | 按住后各阶段的反应符合角色 | `behavior`、`expressions` |

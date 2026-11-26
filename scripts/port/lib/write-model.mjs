@@ -31,6 +31,7 @@ export default {
     skin: ${j(r.materials.skin)}, // 拉 + 戳 + 泛红
     hitTest: ${j(r.materials.hitTest)}, // 点击检测只看这些材质
     mouth: ${j(r.materials.mouth)}, // 口腔、舌头：只跟随戳
+    followPoke: ${j(r.materials.followPoke)}, // 眼睛、睫毛等：只跟随戳（戳脸颊时不从皮肤后面露出来）
     hairOnCheek: ${j(r.materials.hairOnCheek)}, // 垂在脸颊前的发丝：快穿模时被推开
     symbol: ${j(r.materials.symbol)}, // 漫画符号贴片
     noOutline: ${j(r.materials.noOutline)}, // 会变形或是贴纸的材质不画描边
