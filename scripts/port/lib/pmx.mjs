@@ -24,6 +24,9 @@ export function loadPmx(file) {
     material: (name) => materials.find((m) => m.name === name),
     bones: Object.fromEntries(pmx.bones.map((b) => [b.name, b.position])),
     vertexMorphs: pmx.morphs.filter((m) => m.type === 1).map((m) => m.name),
+    /** 每个顶点表情改动了哪些顶点（用来判断表情落在哪个材质上，比如眼部贴片、漫画符号） */
+    vertexMorphVerts: Object.fromEntries(pmx.morphs.filter((m) => m.type === 1).map((m) => [m.name, m.elements.map((e) => e.index)])),
+    textures: pmx.textures,
     uvMorphs: pmx.morphs.filter((m) => m.type === 3).map((m) => ({ name: m.name, vertices: m.elements.map((e) => e.index) })),
   };
 }

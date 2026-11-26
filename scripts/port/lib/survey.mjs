@@ -18,7 +18,7 @@ const ROLES = {
   mouth: /^kou\d*|^口|mouth|^she\d*|舌|tongue|teeth|歯|牙/i,
   skin: /^face\d*|顔|颜|面部|^脸/i,
   cheek: /^cheek|頬|腮/i,
-  hair: /发|髪|hair/i,
+  hair: /发|髪|hair|bang|fringe|刘海|もみあげ/i, // 前发常叫 Bangs / 前髪，挡在脸颊前的往往就是它
   emo: /^emo\d*/i,
 };
 const NOT_LIP = /she|舌|tongue|teeth|歯|牙/i;
@@ -100,11 +100,12 @@ export function survey(model) {
   }
   const symbol = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   const symbolSpots = symbol ? model.vertexMorphs.filter((n) => n.startsWith(symbol) && n !== symbol) : [];
-  if (!symbol) notes.push('模型没有 UV 表情做的漫画符号：personality.eggs 里的符号不可用，可以只保留表情或删掉彩蛋');
+  if (!symbol) notes.push('模型没有 UV 表情做的漫画符号贴片：彩蛋只写 morphs（不写 symbol）。不少模型的漫画符号（💢、汗滴、竖线）是普通顶点表情，见下方"按材质分组"，映射进 model.morphs 就能用');
 
   // 挡在脸颊前的前发：拉扯软垫场在发丝顶点上的最大权重
   const hairWeights = byRole(ROLES.hair).map((m) => ({ name: m.name, weight: round(maxPadWeight(model, m, calibration), 2) }));
   const hairOnCheek = hairWeights.filter((h) => h.weight > 0.5).map((h) => h.name);
+  notes.push(`前发候选是按位置估的（${hairOnCheek.join(', ') || '无'}）：在工作台"材质"里逐个隐藏头发材质，确认挡在脸颊前的就是 hairOnCheek 里的那几个，错了拉脸会穿模`);
 
   // --- 表情名 ---
   const have = new Set(model.vertexMorphs);
@@ -113,7 +114,19 @@ export function survey(model) {
     const hit = names.find((n) => have.has(n));
     if (hit) morphs[key] = hit; else missing.push(key);
   }
-  if (missing.length) notes.push(`这些语义表情在模型里没找到对应：${missing.join(', ')}（表情表里用到它们的地方会被跳过；可在模型表情列表里人工找替代）`);
+  if (missing.length) notes.push(`这些语义表情没按常见名字匹配到：${missing.join(', ')}。缺的不等于模型没有，在工作台"全部表情"里看缩略图找替代`);
+  notes.push('自动匹配只看名字：同名表情在不同模型里观感可能完全不同（比如有的模型「なごみ」是一条黑条、「星目」几乎看不出），写表情表前在工作台"全部表情"里逐个看过');
+
+  // 顶点表情按落在哪个材质分组：眼部贴片、漫画符号常在单独的小材质上（emo、eye 等），比嘴型明显得多
+  const morphsByMaterial = new Map();
+  for (const [name, verts] of Object.entries(model.vertexMorphVerts ?? {})) {
+    const count = new Map();
+    for (const v of verts) { const mi = model.vertexMaterial[v]; if (mi >= 0) count.set(mi, (count.get(mi) ?? 0) + 1); }
+    const top = [...count].sort((a, b) => b[1] - a[1])[0];
+    const mat = top ? model.materials[top[0]].name : '（不改动顶点）';
+    if (!morphsByMaterial.has(mat)) morphsByMaterial.set(mat, []);
+    morphsByMaterial.get(mat).push(name);
+  }
 
   // --- 骨骼 ---
   const bones = { head: '頭', neck: '首', eyes: ['右目', '左目'].filter((n) => model.bones[n]) };
@@ -147,6 +160,7 @@ export function survey(model) {
     missingMorphs: missing,
     symbolSpots,
     uvSymbols: model.uvMorphs.map((u) => u.name),
+    morphsByMaterial: Object.fromEntries(morphsByMaterial),
     notes,
   };
 }

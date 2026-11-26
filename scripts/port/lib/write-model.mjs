@@ -1,7 +1,7 @@
 // 把探测结果写成角色目录下的 model.js（模型层配置）和 SURVEY.md（探测报告，列出需要人确认的地方）
 const j = (v) => JSON.stringify(v);
 
-export function modelJs({ file, bytes, r }) {
+export function modelJs({ file, bytes, texDir, r }) {
   const morphLines = Object.entries(r.morphs).map(([k, v]) => `    ${k}: ${j(v)},`);
   const missing = r.missingMorphs.map((k) => `    // ${k}: '',  // 模型里没找到，表情表里用到它的地方会被跳过`);
   return `/*
@@ -13,6 +13,7 @@ import hairRest from './hairRest.json';
 export default {
   file: ${j(file)},
   bytes: ${bytes}, // 服务器不给 content-length 时，用它估算加载进度
+  texDir: ${j(texDir)}, // 贴图目录在磁盘上的真实名字（区分大小写；check 会逐张核对）
 
   /*
    * 模型坐标 ↔ 参考坐标：model.x = ref.x * sx, model.y = ref.y + dy, model.z = ref.z + dz
@@ -77,13 +78,15 @@ ${Object.entries(r.marks).map(([k, v]) => `- ${k}: ${v}`).join('\n') || '- （�
 
 ${r.hairWeights.map((h) => `- ${h.name}: ${h.weight}`).join('\n') || '- （无头发材质）'}
 
-## 可用的漫画符号（UV 表情，填到 personality.eggs 的 symbol）
+## UV 漫画符号（填到 eggs 的 symbol；没有就只用顶点表情）
 
 ${r.uvSymbols.join('、') || '（无）'}
 
-## 模型里全部顶点表情（写表情表时找替代用）
+## 顶点表情按材质分组（长什么样在工作台"全部表情"里看缩略图）
 
-${model.vertexMorphs.join('、')}
+眼部贴片（><、X_X、漩涡、爱心）和漫画符号通常在单独的小材质上，比嘴型明显得多，优先考虑。
+
+${Object.entries(r.morphsByMaterial).map(([mat, names]) => `- **${mat}**：${names.join('、')}`).join('\n')}
 
 ## 全部材质
 

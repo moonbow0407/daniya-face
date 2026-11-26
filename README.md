@@ -19,7 +19,7 @@ npm run port -- palette <id> --image public/<立绘>                            
 npm run port -- theme <id> --colors '#主色,#辅色,#点缀色'                            # 生成配色
 npm run port -- check <id>                                                         # 检查
 npm run port -- default <id>                                                       # 设为网站默认角色
-npm run dev                                                                        # 打开 ?char=<id>&studio 挑选性格方案
+npm run dev                                                                        # 打开 ?char=<id>&studio 看全部表情、演示各动作
 ```
 
 4. 改 [site.json](site.json)：左上角链接、Cloudflare Pages 项目名、统计 token（**不要沿用本仓库的**）
@@ -42,7 +42,7 @@ npm run dev                                                                     
 
 - Vite + three.js 0.170（MMDLoader 读 PMX 模型，OutlineEffect 描边）
 - 脸颊形变全在 GPU 着色器里（`src/rig/`）：戳的冲击场、拉扯的软垫场、回弹弹簧，只作用在脸部皮肤；垂在脸颊前的前发只在快穿模时被推开
-- 表情 = 模型自带的表情 morph 组合：引擎只算通用的情绪信号（`src/expression/signals.js`），每个角色用自己的表情表把信号换成表情（性格方案在 `src/characters/<角色>/proposals/`，`?studio` 工作台里对比挑选）；漫画符号是 UV 表情（MMDLoader 不支持，`src/rig/symbols.js` 自己实现）
+- 表情 = 模型自带的表情 morph 组合：引擎只算通用的情绪信号（`src/expression/signals.js`），每个角色用自己的表情表把信号换成表情（`src/characters/<角色>/expressions.js`：每个动作一个招牌表情 + 变体，`?studio` 工作台里看效果）；漫画符号是 UV 表情（MMDLoader 不支持，`src/rig/symbols.js` 自己实现）
 - 开放哪些动作、界面配色都由角色配置决定：工具栏按 `personality.actions` 生成，配色是 `presentation.theme` 写入的 CSS 变量
 - 头发的静止姿势是离线跑一次物理烘焙出来的（角色目录下的 `hairRest.json`），运行时不开物理，不穿模、不飘
 - 音效：拉脸用采样，其它用 Web Audio 现场合成（`src/audio/sfx.js`）
@@ -82,7 +82,7 @@ npm run dev      # http://localhost:5173
 npm run build
 ```
 
-换模型或换形态后，用 `http://localhost:5173/?bake` 打开页面，控制台里复制 `window.__bakedHairRest` 存为 `src/characters/<角色>/hairRest.json`（头发的静止姿势）。
+换模型或换形态后，在 `npm run dev` 下打开 `http://localhost:5173/?char=<角色>&bake`，烘焙完会自动写入 `src/characters/<角色>/hairRest.json`（头发的静止姿势）。
 
 部署：`./deploy.ps1`（Cloudflare Pages，本地构建后上传，模型等素材随 `dist` 一起上传；项目名取 `site.json`）。
 

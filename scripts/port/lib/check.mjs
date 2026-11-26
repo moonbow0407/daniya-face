@@ -1,7 +1,8 @@
-// 静态检查角色配置：名字都能在模型里找到、文件都在、格式对；每套性格方案都试跑一遍；提醒人设卡和方案是否齐全
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+// 静态检查角色配置：名字都能在模型里找到、文件和贴图都在、格式对；表情表试跑一遍，并看各动作的表情有没有拉开差别
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadPmx } from './pmx.mjs';
+import { missingTextures } from './textures.mjs';
 
 const ACTIONS = ['poke', 'single', 'double', 'cup', 'rhythm'];
 const BEHAVIORS = ['cup', 'dizzy', 'afterglow', 'sulk'];
@@ -23,7 +24,12 @@ export async function check({ id, root, loadModule }) {
   // ---------- 模型层 ----------
   let pmx = null;
   if (!m.file || !existsSync(pub(m.file))) errors.push(`model.file 指向的模型不存在：public${m.file}`);
-  else { pmx = loadPmx(pub(m.file)); ok.push(`模型 ${m.file}（${pmx.name}）`); }
+  else {
+    pmx = loadPmx(pub(m.file)); ok.push(`模型 ${m.file}（${pmx.name}）`);
+    const lost = missingTextures(pub(m.file), pmx.textures, m.texDir ?? 'tex');
+    if (lost.length) errors.push(`${lost.length} 张贴图在磁盘上找不到或大小写不一致（服务器区分大小写，找不到时模型只剩描边）：${lost.slice(0, 5).join('、')}${lost.length > 5 ? ' …' : ''}。核对 public${m.file.replace(/[^/]+$/, '')} 下的目录名和 model.texDir`);
+    else ok.push(`贴图 ${new Set(pmx.textures).size} 张都在（目录 ${m.texDir ?? 'tex'}/）`);
+  }
   for (const k of ['sx', 'dy', 'dz', 'faceWidth']) if (typeof m.calibration?.[k] !== 'number') errors.push(`model.calibration.${k} 缺失或不是数字`);
   if (pmx) {
     const mats = new Set(pmx.materials.map((x) => x.name));
@@ -42,7 +48,8 @@ export async function check({ id, root, loadModule }) {
     for (const [k, n] of Object.entries(m.morphs ?? {})) if (n && !morphNames.has(n)) errors.push(`model.morphs.${k} = "${n}" 在模型的顶点表情里不存在`);
     for (const n of m.symbolSpots ?? []) if (!morphNames.has(n)) errors.push(`model.symbolSpots 里的 "${n}" 在模型的顶点表情里不存在`);
   }
-  if (!m.hairRest || !Object.keys(m.hairRest).length) warnings.push(`hairRest.json 为空：还没烘焙头发静止姿势（打开 /?char=${id}&bake，见 docs/PORTING.md 第 4 步）`);
+  if (typeof m.hairRest === 'string') errors.push('hairRest.json 是一个字符串（从控制台复制时多包了一层引号），引擎读不到；重新烘焙：npm run dev 下打开 /?char=' + id + '&bake');
+  else if (!m.hairRest || !Object.keys(m.hairRest).length) warnings.push(`hairRest.json 为空：还没烘焙头发静止姿势（npm run dev 下打开 /?char=${id}&bake，会自动写入）`);
 
   // ---------- 性格层 ----------
   const actions = Object.keys(p.actions ?? {});
@@ -58,22 +65,7 @@ export async function check({ id, root, loadModule }) {
   const sheetCtx = { m, pmx, uv, errors, warnings, ok };
   checkSheet('personality', p, sheetCtx);
 
-  // ---------- 人设卡与方案 ----------
-  const propDir = join(dir, 'proposals');
-  if (existsSync(propDir)) {
-    const persona = existsSync(join(dir, 'persona.md')) ? readFileSync(join(dir, 'persona.md'), 'utf8') : '';
-    if (!/## 性格关键词\s*\r?\n-[ \t]*\S/.test(persona)) warnings.push('persona.md 还没写（性格关键词为空）：先写人设卡，再据此写方案');
-    const files = readdirSync(propDir).filter((f) => f.endsWith('.js'));
-    for (const f of files) {
-      try { checkSheet(`proposals/${f}`, (await loadModule(`/src/characters/${id}/proposals/${f}`)).default ?? {}, sheetCtx); }
-      catch (e) { errors.push(`proposals/${f} 加载失败：${e.message}`); }
-    }
-    const real = files.filter((f) => f !== 'base.js');
-    if (real.length < 2) warnings.push(`proposals/ 里只有 ${real.length} 套性格方案（不算 base.js），建议 2~3 套供用户在 ?char=${id}&studio 里挑选`);
-    const chosen = readFileSync(join(dir, 'personality.js'), 'utf8').match(/from '\.\/proposals\/([^']+)\.js'/)?.[1];
-    if (chosen === 'base') warnings.push('personality.js 还在用 base 方案（没有性格）：用户选定后把 import 改成选中的方案');
-    else if (chosen) ok.push(`选定方案 proposals/${chosen}.js`);
-  }
+  checkContrast(p, { m, warnings, ok });
 
   // ---------- 呈现层 ----------
   for (const k of ['loading', 'finale']) if (v.images?.[k] && !existsSync(pub(v.images[k]))) warnings.push(`图片不存在：public${v.images[k]}`);
@@ -87,7 +79,7 @@ export async function check({ id, root, loadModule }) {
   return { errors, warnings, ok };
 }
 
-/** 检查一套性格（personality 本身或一个方案文件）：表情表能跑、用到的名字存在、彩蛋合法 */
+/** 检查表情表能跑、用到的名字存在、彩蛋合法 */
 function checkSheet(label, sheet, { m, pmx, uv, errors, warnings, ok }) {
   if (typeof sheet.expressions !== 'function') { errors.push(`${label}.expressions 不是函数`); return; }
   const semantic = new Set(Object.keys(m.morphs ?? {}).filter((k) => m.morphs[k]));
@@ -101,7 +93,8 @@ function checkSheet(label, sheet, { m, pmx, uv, errors, warnings, ok }) {
   for (const k of Object.keys(sheet.behavior ?? {})) if (!BEHAVIORS.includes(k)) errors.push(`${label}.behavior.${k} 不是已知的反应（可用：${BEHAVIORS.join(' / ')}）`);
   const eggs = [...(sheet.eggs?.list ?? []).map((e, i) => [`list[${i}]`, e]), ...(sheet.eggs?.dizzy ? [['dizzy', sheet.eggs.dizzy]] : [])];
   for (const [i, egg] of eggs) {
-    if (pmx && !uv.has(egg.symbol)) errors.push(`${label}.eggs.${i}.symbol "${egg.symbol}" 不是模型里的 UV 表情`);
+    if (!egg.symbol) { if (!egg.morphs) errors.push(`${label}.eggs.${i} 既没有 symbol 也没有 morphs`); continue; } // 只有表情的彩蛋
+    if (pmx && !uv.has(egg.symbol)) errors.push(`${label}.eggs.${i}.symbol "${egg.symbol}" 不是模型里的 UV 表情（模型没有 UV 符号就只写 morphs）`);
     if (!(m.symbolSpots ?? []).includes(egg.spot)) errors.push(`${label}.eggs.${i}.spot "${egg.spot}" 不在 model.symbolSpots 里`);
     if (!Array.isArray(egg.at) || egg.at.length !== 3) errors.push(`${label}.eggs.${i}.at 应为 [x, y, z]`);
   }
@@ -113,9 +106,61 @@ function fakeSignals(eggs) {
   const base = {
     blink: 0, open: 1, h: 0, rh: 0, rhythmActive: false, pullSides: 1, left: 0, right: 0,
     es: { mouth: 0, surprise: 0 }, shy: 0, enjoy: 0, dizzy: 0, afterglow: 0, sulk: 0,
-    pokeFace: 0, pokeRaw: 0, egg: null, eggFade: 0, pokes: { reactions: [0, 0], smiles: [0, 0] },
+    pokeFace: 0, pokeRaw: 0, combo: 0, roll: 0, egg: null, eggFade: 0, pokes: { reactions: [0, 0], smiles: [0, 0] },
   };
   const all = { ...base, blink: 1, open: 0, h: 1, rh: 1, rhythmActive: true, pullSides: 2, left: 1, right: 1, es: { mouth: 1, surprise: 1 }, shy: 1, enjoy: 1, dizzy: 1, afterglow: 1, sulk: 1, pokeFace: 1, pokes: { reactions: [1, 1], smiles: [1, 1] } };
   const egg = eggs?.list?.[0] ?? eggs?.dizzy;
-  return [base, all, { ...all, rhythmActive: false, rh: 0 }, ...(egg ? [{ ...all, egg, eggFade: 1 }] : [])];
+  return [base, all, { ...all, roll: 0.99, combo: 5 }, { ...all, rhythmActive: false, rh: 0 }, ...(egg ? [{ ...all, egg, eggFade: 1 }] : [])];
+}
+
+/*
+ * 区分度：每个动作在"招牌"（roll = 0）和"变体"（roll = 0.99，或拉脸时的彩蛋）下各跑一遍表情表，
+ * 去掉物理上必然的嘴型，比较剩下的表情。两个动作几乎一样、或者动作没有变体，都提醒。
+ */
+const PHYSICAL = new Set(['blink', 'browDown', 'mouthWideL', 'mouthWideR', 'mouthNarrow', 'mouthForward']);
+const NEUTRAL = {
+  blink: 0, open: 1, h: 0, rh: 0, rhythmActive: false, pullSides: 1, left: 0, right: 0,
+  es: { mouth: 0, surprise: 0 }, shy: 0, enjoy: 0, dizzy: 0, afterglow: 0, sulk: 0,
+  pokeFace: 0, pokeRaw: 0, combo: 0, roll: 0, egg: null, eggFade: 0, pokes: { reactions: [0, 0], smiles: [0, 0] },
+};
+const ACTION_SIGNALS = {
+  poke: { pokeFace: 1, pokeRaw: 1, combo: 1, pokes: { reactions: [0.6, 0], smiles: [0.3, 0] } },
+  single: { h: 1, pullSides: 1, right: 1, es: { mouth: 1, surprise: 1 } },
+  double: { h: 1, pullSides: 2, left: 1, right: 1, es: { mouth: 1, surprise: 1 } },
+  cup: { pullSides: 0, es: { mouth: 0.55, surprise: 0.2 }, shy: 0.3, enjoy: 1 },
+};
+const NAMES = { poke: '戳', single: '单手拉', double: '双手拉', cup: '捧' };
+
+function checkContrast(p, { m, warnings, ok }) {
+  if (typeof p.expressions !== 'function') return;
+  const known = new Set(Object.keys(m.morphs ?? {}).filter((k) => m.morphs[k]));
+  const run = (sig) => {
+    const v = {};
+    try { p.expressions({ ...NEUTRAL, ...sig }, (k, x) => { if (!PHYSICAL.has(k) && known.has(k)) v[k] = (v[k] ?? 0) + x; }); } catch { return {}; }
+    return v;
+  };
+  const egg = p.eggs?.list?.[0];
+  const acts = Object.keys(p.actions ?? {}).filter((a) => ACTION_SIGNALS[a]);
+  const vec = {};
+  for (const a of acts) {
+    const sig = ACTION_SIGNALS[a];
+    vec[a] = run(sig);
+    const variant = a === 'poke' ? run({ ...sig, roll: 0.99, combo: 4 })
+      : run({ ...sig, roll: 0.99, ...((a === 'single' || a === 'double') && egg && egg.morphs ? { egg, eggFade: 1 } : {}) });
+    const peak = Math.max(0, ...Object.values(vec[a]));
+    if (peak < 0.4) warnings.push(`${NAMES[a]}：最强的表情只有 ${peak.toFixed(2)}，可能看不出反应（招牌表情给到 0.6~1）`);
+    if (cosine(vec[a], variant) > 0.95) warnings.push(`${NAMES[a]}：没有变体（表情表没用 p.roll${a === 'poke' ? ' / p.combo' : '，也没有彩蛋'}），每次都一样`);
+  }
+  for (let i = 0; i < acts.length; i++) for (let j = i + 1; j < acts.length; j++) {
+    const c = cosine(vec[acts[i]], vec[acts[j]]);
+    if (c > 0.85) warnings.push(`${NAMES[acts[i]]} 和 ${NAMES[acts[j]]} 的表情几乎一样（相似度 ${c.toFixed(2)}），给它们各自的招牌表情`);
+  }
+  if (acts.length) ok.push(`区分度：比较了 ${acts.map((a) => NAMES[a]).join(' / ')} 的招牌与变体`);
+}
+
+function cosine(a, b) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  let ab = 0, aa = 0, bb = 0;
+  for (const k of keys) { const x = a[k] ?? 0, y = b[k] ?? 0; ab += x * y; aa += x * x; bb += y * y; }
+  return aa && bb ? ab / Math.sqrt(aa * bb) : aa === bb ? 1 : 0;
 }

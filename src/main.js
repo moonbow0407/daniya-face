@@ -32,6 +32,7 @@ import { setupSiteLinks, setupAnalytics } from './ui/site.js';
 const cfg = pickCharacter();
 const { model: modelCfg, personality, presentation } = cfg;
 const BAKE = new URLSearchParams(location.search).has('bake');
+const STUDIO = new URLSearchParams(location.search).has('studio');
 const app = document.querySelector('#app');
 
 setupSiteLinks();
@@ -47,7 +48,10 @@ let mesh, uvMorphData;
 try {
   let texturesReady;
   [{ mesh, uvMorphData, texturesReady }] = await Promise.all([
-    loadModel({ url: modelCfg.file, sizeHint: modelCfg.bytes, keepMorphs: usedMorphNames(modelCfg), progress: loading.progress }),
+    loadModel({
+      url: modelCfg.file, sizeHint: modelCfg.bytes, texDir: modelCfg.texDir, progress: loading.progress,
+      keepMorphs: STUDIO ? null : usedMorphNames(modelCfg), // 工作台要浏览模型的全部表情
+    }),
     BAKE ? loadAmmo() : null,
   ]);
   loading.setLabel(presentation.text.textures);
@@ -67,12 +71,23 @@ const pose = await setupPose({
   onBakeProgress: (f) => { loading.progress.prep = 0.6 * f; },
 });
 mesh.updateMatrixWorld(true);
+// 开发服务器上烘焙完直接写回角色目录的 hairRest.json（见 vite.config.js）
+if (BAKE && import.meta.env.DEV) {
+  // 写文件会触发开发服务器整页刷新：先去掉地址里的 ?bake，免得刷新后又烘焙一遍、循环写入
+  const url = new URL(location.href);
+  url.searchParams.delete('bake');
+  history.replaceState(null, '', url);
+  fetch(`/__port/hair-rest?char=${cfg.id}`, { method: 'POST', body: window.__bakedHairRest })
+    .then((r) => r.text().then((t) => (r.ok ? console.info(`[bake] 已写入 src/characters/${cfg.id}/hairRest.json（${t}）`) : Promise.reject(t))))
+    .catch((e) => console.error(`[bake] 写入失败，请手动复制 window.__bakedHairRest：${e}`))
+    .finally(() => { window.__bakeDone = true; });
+}
 
 const sfx = new Sfx(cfg.id);
 const s = createInteractionState(personality);
 const pokes = new PokeField();
 const symbols = prepareSymbols(mesh, modelCfg.materials.symbol, personality.eggs);
-const debug = { morphs: null, egg: null }; // 调试：直接指定表情（语义名）/符号
+const debug = { morphs: null, egg: null, roll: null }; // 调试：直接指定表情（语义名）/ 彩蛋 / 变体随机数
 const ctx = { cfg, app, stage, mesh, model, pose, s, pokes, sfx, symbols, debug, rhythm: null };
 
 const { rhythmButton } = setupToolbar({ sfx, s, actions: personality.actions });
@@ -145,7 +160,7 @@ window.__face = {
 };
 window[`__${cfg.id}`] = window.__face;
 
-// 表情工作台（?studio）：对比性格方案、浏览模型表情。只在需要时加载
-if (new URLSearchParams(location.search).has('studio')) {
+// 表情工作台（?studio）：演示各动作、浏览模型的全部表情和材质。只在需要时加载
+if (STUDIO) {
   import('./ui/studio.js').then((m) => m.openStudio(ctx));
 }

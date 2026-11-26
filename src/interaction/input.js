@@ -36,7 +36,11 @@ export function createInput(ctx) {
 
   /** 戳一下：冲击点限制在脸颊肉上 */
   function poke({ x, y, z }, strength) {
-    s.pokeUntil = performance.now() + 550;
+    const now = performance.now();
+    s.pokeCombo = now - s.lastPokeAt < 700 ? s.pokeCombo + 1 : 1;
+    s.lastPokeAt = now;
+    s.roll = Math.random();
+    s.pokeUntil = now + 550;
     pokes.tap(new THREE.Vector3((Math.sign(x) || 1) * clamp(Math.abs(x), 0.3, 0.82), clamp(y, 16.87, 17.3), z), strength);
   }
   /** 拉脸：抓取点固定在脸颊肉上，只取高度 */
@@ -83,6 +87,7 @@ export function createInput(ctx) {
     if (act !== 'single' && act !== 'double' && act !== 'cup') return;
 
     s.holdId = e.pointerId;
+    s.roll = Math.random();
     s.pullSides = act === 'cup' ? 0 : act === 'single' ? 1 : 2;
     s.cupHeld = act === 'cup';
     if (s.cupHeld) { sfx.cupPress(); s.cupTime = 0; s.rubEnergy = 0; s.rubLevel = 0; s.lastRubPx.set(e.clientX, e.clientY); }

@@ -3,7 +3,7 @@
  * 移植新角色的命令行工具（流程见 skills/port-character/SKILL.md 与 docs/PORTING.md）
  *
  *   npm run port -- new <id> --model <模型.pmx> --name <中文名>   新建角色目录：模板 + 探测模型 + 注册
- *   npm run port -- survey <id> [--model <模型.pmx>] [--force]     重新探测模型，重写 model.js 与 SURVEY.md
+ *   npm run port -- survey <id> [--model <模型.pmx>] [--force]     重新探测模型：只刷新 SURVEY.md；加 --force 连 model.js 一起重写
  *   npm run port -- palette <id> --image <图片> [--image ...]       从图片取色，只打印候选颜色
  *   npm run port -- theme <id> --colors '#主色,#辅色,#点缀色'       用选定的 3 个颜色写 theme.js
  *   npm run port -- theme <id> --image <图片>                       偷懒版：直接用取色的前三个写 theme.js
@@ -19,6 +19,7 @@ import { survey } from './lib/survey.mjs';
 import { modelJs, surveyMd } from './lib/write-model.mjs';
 import { samplePixels, palette, deriveTheme, themeJs, parseHex } from './lib/theme.mjs';
 import { check } from './lib/check.mjs';
+import { detectTexDir, missingTextures } from './lib/textures.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const [cmd, id, ...rest] = process.argv.slice(2);
@@ -42,10 +43,13 @@ function modelPath(p) {
   return { abs, url };
 }
 
-function runSurvey(model) {
+function runSurvey(model, { writeModel = true } = {}) {
   const pmx = loadPmx(model.abs);
   const r = survey(pmx);
-  writeFileSync(join(charDir(), 'model.js'), modelJs({ file: model.url, bytes: statSync(model.abs).size, r })); wrote(join(charDir(), 'model.js'));
+  const texDir = detectTexDir(model.abs, pmx.textures);
+  const lost = missingTextures(model.abs, pmx.textures, texDir);
+  if (lost.length) r.notes.unshift(`${lost.length} 张贴图在磁盘上找不到（或大小写不一致，服务器区分大小写）：${lost.slice(0, 5).join('、')}${lost.length > 5 ? ' …' : ''}`);
+  if (writeModel) { writeFileSync(join(charDir(), 'model.js'), modelJs({ file: model.url, bytes: statSync(model.abs).size, texDir, r })); wrote(join(charDir(), 'model.js')); }
   writeFileSync(join(charDir(), 'SURVEY.md'), surveyMd({ id, file: model.url, model: pmx, r })); wrote(join(charDir(), 'SURVEY.md'));
   console.log(`\n校准估算 ${JSON.stringify(r.calibration)}`);
   console.log(`前发候选 ${r.materials.hairOnCheek.join(', ') || '（无）'}；匹配到表情 ${Object.keys(r.morphs).length} 个，缺 ${r.missingMorphs.length} 个`);
@@ -118,14 +122,15 @@ switch (cmd) {
     writeTheme(['#f3a6c4', '#b98be0', '#7fa4f0'], '默认粉紫（还没取色，运行 theme 命令替换）');
     runSurvey(model);
     register();
-    console.log(`\n下一步：写 persona.md 和 proposals/；配色 npm run port -- palette ${id} --image <立绘>；最后 npm run port -- check ${id}`);
+    console.log(`\n下一步：npm run dev，打开 /?char=${id}&studio 看"全部表情"，再写 expressions.js；配色 npm run port -- palette ${id} --image <立绘>；最后 npm run port -- check ${id}`);
     break;
   }
   case 'survey': {
     if (!existsSync(charDir())) fail(`src/characters/${id}/ 不存在；先用 new`);
-    if (existsSync(join(charDir(), 'model.js')) && !flag('force')) fail('model.js 已存在，会被覆盖（手改的内容会丢）；确认要重写请加 --force');
-    const cur = existsSync(join(charDir(), 'model.js')) && readFileSync(join(charDir(), 'model.js'), 'utf8').match(/file: "([^"]+)"/)?.[1];
-    runSurvey(modelPath(opt('model') ?? cur));
+    const hasModel = existsSync(join(charDir(), 'model.js'));
+    const cur = hasModel && readFileSync(join(charDir(), 'model.js'), 'utf8').match(/file: ["']([^"']+)["']/)?.[1];
+    runSurvey(modelPath(opt('model') ?? cur), { writeModel: !hasModel || flag('force') });
+    if (hasModel && !flag('force')) console.log('\n（model.js 已存在，只刷新了 SURVEY.md；要连 model.js 一起重写请加 --force，手改的内容会丢）');
     break;
   }
   case 'palette': {
