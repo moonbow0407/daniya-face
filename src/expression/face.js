@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { symbolUniforms, symbolCenter } from '../rig/symbols.js';
+import { symbolUniforms, symbolCenter, SYMBOL_LINE } from '../rig/symbols.js';
 import { createVertexSymbols } from '../rig/vertexSymbols.js';
 import { BlinkRhythm } from '../rig/springs.js';
 import { MorphDriver } from './morphs.js';
@@ -9,6 +9,7 @@ const { damp } = THREE.MathUtils;
 
 /**
  * 整理彩蛋，返回运行时用的副本。彩蛋 = 拉脸时偶尔换成的另一套表情（morphs），可以再带一个 UV 漫画符号（symbol）。
+ * 另有两个固定场合的彩蛋：揉晕（dizzy）、连戳生气（angry）。
  * 带符号的彩蛋补上贴片起点（预设位置的中心）；模型没有符号贴片时，带符号的彩蛋丢掉，只有表情的照常用。
  */
 export function prepareSymbols(mesh, symbolMaterial, eggs = {}) {
@@ -24,6 +25,7 @@ export function prepareSymbols(mesh, symbolMaterial, eggs = {}) {
     tint: eggs.tint ?? [0.24, 0.5, 0.84],
     list,
     dizzy: prep(eggs.dizzy),
+    angry: prep(eggs.angry),
   };
 }
 
@@ -79,6 +81,7 @@ export function createFace(ctx) {
     symbolUniforms.uSymTo.value.set(egg.at[0], egg.at[1] + 0.07 * (1 - ef), egg.at[2]);
     symbolUniforms.uSymScale.value = egg.scale;
     symbolUniforms.uSymTint.value.set(...(egg.tint ?? symbols.tint));
+    symbolUniforms.uSymLine.value.set(...(egg.line ?? SYMBOL_LINE));
   }
 
   return function updateFace({ dt, now, r, rhythmActive }) {

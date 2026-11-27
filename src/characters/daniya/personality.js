@@ -25,6 +25,7 @@ export default {
     dizzy: { energy: 1.2 }, // 揉脸攒够多少就晕
     afterglow: { minHold: 0.6 }, // 捧够多少秒再松手才"嘿嘿"
     sulk: true, // 拉久了松手会生闷气
+    angry: { combo: 5 }, // 连戳这么多下（每下间隔 < 0.7 秒）就生气，表情和符号见 eggs.angry
   },
 
   expressions,
@@ -32,7 +33,7 @@ export default {
   /*
    * 彩蛋：拉脸时偶尔冒出的漫画符号 + 表情。symbol = 模型里的 UV 表情名，
    * spot = 预设位置（model.symbolSpots），at / scale = 再挪到哪里、缩放多少（模型绑定姿态坐标；
-   * 达妮娅脸颊外缘约 x=±0.62, y=16.6）。morphs 用语义名。
+   * 达妮娅脸颊外缘约 x=±0.62, y=16.6）。tint = 填充色，line = 线稿色（不写就是默认的深蓝灰）。morphs 用语义名。
    */
   eggs: {
     chance: 0.3,
@@ -43,6 +44,11 @@ export default {
         morphs: { browTrouble: 0.75, eyeHalf: 0.45, mouthCornerDown: 0.15 },
       },
     ],
+    /** 连戳生气：怒气符号 + 半眼、压眉、鼓嘴 */
+    angry: {
+      symbol: 'nu', spot: 'emo3上', at: [-0.62, 17.42, 0.66], scale: 0.5, tint: [0.95, 0.55, 0.6], line: [0.62, 0.14, 0.25],
+      morphs: { browDown: 0.7, eyeHalf: 0.5, pout: 0.9, serious: 0.35 },
+    },
     /** 揉脸揉晕了：乱线 + 晕乎乎的表情 */
     dizzy: {
       symbol: 'luanma', spot: 'emo3右', at: [0.82, 16.86, 0.72], scale: 0.5, tint: [0.42, 0.38, 0.55],

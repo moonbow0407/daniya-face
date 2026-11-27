@@ -31,11 +31,21 @@ export function createSignals({ s, sfx, symbols, debug, mesh, symbolCenter, symb
       else if (sulk < 0.08) sulkPuffed = false;
     }
 
-    // 彩蛋：拉的时候淡入，松手后淡出；揉晕时显示晕的符号，松手后还晕一小会儿
+    // 连戳生气：连戳到 behavior.angry.combo 下（音游外），戳的表情换成生气，跟着戳的余韵淡出
+    const angryAt = b.angry?.combo;
+    const mad = angryAt && !rhythmActive && s.pokeCombo >= angryAt ? Math.max(pokeFace, pokeAfter) : 0;
+
+    // 彩蛋：拉的时候淡入，松手后淡出；揉晕时显示晕的符号，松手后还晕一小会儿；连戳生气时显示生气的符号
+    // 优先级：揉晕 > 生气 > 拉脸彩蛋（正在拉、彩蛋正显示时不被生气盖掉）
     if (s.dizzyUntil > now) s.egg = symbols.dizzy; else if (s.egg && s.egg === symbols.dizzy) s.egg = null;
+    if (symbols.angry && s.egg !== symbols.dizzy) {
+      if (mad > 0.01 && !(s.egg && s.egg !== symbols.angry && h > 0.015)) s.egg = symbols.angry;
+      else if (s.egg === symbols.angry && mad <= 0.01) s.egg = null;
+    }
     if (s.egg) shownEgg = s.egg;
     if (debug.egg) { if (debug.egg.symbol) debug.egg.from ??= symbolCenter(mesh, symbolMaterial, debug.egg.spot); s.egg = shownEgg = debug.egg; }
-    eggFade = damp(eggFade, s.egg && (h > 0.015 || debug.egg || s.egg === symbols.dizzy) ? 1 : 0, s.egg ? 12 : 7, dt);
+    const eggTarget = s.egg === symbols.angry && !debug.egg ? mad : s.egg && (h > 0.015 || debug.egg || s.egg === symbols.dizzy) ? 1 : 0;
+    eggFade = damp(eggFade, eggTarget, s.egg ? 12 : 7, dt);
     if (!s.egg && eggFade < 0.005) shownEgg = null;
     const ef = shownEgg ? eggFade : 0;
 
@@ -70,6 +80,7 @@ export function createSignals({ s, sfx, symbols, debug, mesh, symbolCenter, symb
       pokeRaw: pokeFace,
       pokeAfter,
       combo: s.pokeCombo,
+      mad, // 连戳生气程度 0..1（生气的表情在彩蛋 eggs.angry.morphs 里）
       roll: debug.roll ?? s.roll,
       egg: shownEgg,
       eggFade: ef,

@@ -13,6 +13,7 @@
  *   egg, eggFade       彩蛋及其淡入程度
  *   pokes.reactions / pokes.smiles, pokeFace  戳脸反应（[右脸, 左脸]）
  *   sulk               生闷气程度
+ *   combo, mad         连戳次数 / 连戳生气程度（生气的表情在 personality.eggs.angry）
  */
 export default function daniyaExpressions(p, add) {
   const { h, rh, open } = p;
@@ -48,16 +49,19 @@ export default function daniyaExpressions(p, add) {
   }
   if (p.egg) for (const [k, v] of Object.entries(p.egg.morphs)) add(k, v * p.eggFade);
 
-  // 戳：弯眼笑一下，之后被戳的一侧放松、嘴角上扬
+  // 戳：弯眼笑一下，之后被戳的一侧放松、嘴角上扬；连戳时眉头渐渐为难，戳多了生气（笑容收起来）
   const [reactR, reactL] = p.pokes.reactions; // 槽位 0 = x<0 = 右脸
   const pf = p.pokeFace;
-  add('eyeSmile', 0.85 * pf * (1 - rh));
-  add('eyeRelaxR', reactR * 0.28 * open * (1 - pf) * (1 - rh));
-  add('eyeRelaxL', reactL * 0.28 * open * (1 - pf) * (1 - rh));
+  const calmPoke = (1 - rh) * (1 - p.mad);
+  add('eyeSmile', 0.85 * pf * calmPoke);
+  add('eyeRelaxR', reactR * 0.28 * open * (1 - pf) * calmPoke);
+  add('eyeRelaxL', reactL * 0.28 * open * (1 - pf) * calmPoke);
   const [smileR, smileL] = p.pokes.smiles;
   const smile = Math.max(smileR, smileL);
-  add('mouthCornerUpR', (smile * 0.62 + smileR * 0.58 + 0.25 * pf) * (1 - rh));
-  add('mouthCornerUpL', (smile * 0.62 + smileL * 0.58 + 0.25 * pf) * (1 - rh));
+  add('mouthCornerUpR', (smile * 0.62 + smileR * 0.58 + 0.25 * pf) * calmPoke);
+  add('mouthCornerUpL', (smile * 0.62 + smileL * 0.58 + 0.25 * pf) * calmPoke);
+  const fret = p.rhythmActive ? 0 : Math.min(1, Math.max(0, p.combo - 1) / 3); // 连戳 2~4 下
+  add('browTrouble', 0.45 * fret * Math.max(pf, p.pokeAfter) * (1 - p.mad));
   const Z = Math.min(1, 0.65 * Math.max(reactR, reactL) + 0.85 * smile);
   add('browTroubleL', p.left * h * 0.045 + (0.34 * Z + 0.27 * reactL) * 0.35);
   add('browTroubleR', p.right * h * 0.045 + (0.34 * Z + 0.27 * reactR) * 0.35);

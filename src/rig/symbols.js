@@ -22,11 +22,15 @@ export function makeMorphsRelative(geometry) {
  * 漫画符号贴片的位置/大小微调：模型预设的位置偏大、偏远，
  * 这里把贴片从预设中心 uSymFrom 挪到 uSymTo 并缩放（在蒙皮前做，会跟着头动）。
  */
+/** 漫画符号线稿的默认颜色：柔和的深蓝灰 */
+export const SYMBOL_LINE = [0.08, 0.13, 0.26];
+
 export const symbolUniforms = {
   uSymFrom: { value: new THREE.Vector3() },
   uSymTo: { value: new THREE.Vector3() },
   uSymScale: { value: 1 },
   uSymTint: { value: new THREE.Vector3(0.24, 0.50, 0.84) }, // 填充主色（下深上浅）
+  uSymLine: { value: new THREE.Vector3(...SYMBOL_LINE) }, // 线稿颜色
 };
 export function setupSymbol(material) {
   material.transparent = true;
@@ -38,7 +42,7 @@ export function setupSymbol(material) {
       shader.vertexShader.replace('#include <morphtarget_vertex>', `#include <morphtarget_vertex>
 vSymLocal = transformed - uSymFrom;
 transformed = uSymTo + vSymLocal * uSymScale;`);
-    shader.fragmentShader = 'uniform vec3 uSymTint;\nvarying vec3 vSymLocal;\n' + recolorSymbol(shader.fragmentShader, 'uSymTint', 'vSymLocal.y / 1.1');
+    shader.fragmentShader = 'uniform vec3 uSymTint, uSymLine;\nvarying vec3 vSymLocal;\n' + recolorSymbol(shader.fragmentShader, 'uSymTint', 'vSymLocal.y / 1.1', 'uSymLine');
   };
   material.customProgramCacheKey = () => 'symbol';
   material.needsUpdate = true;
@@ -47,16 +51,16 @@ transformed = uSymTo + vSymLocal * uSymScale;`);
 /**
  * 漫画符号统一画风（贴片符号和顶点表情符号共用）：原图常是饱和色 + 粗黑线，和模型的柔和色调不搭。
  * 线稿改成柔和的深蓝灰，填充改成上浅下深的 tint 色，保留原图高光；不吃光照，半透明。
- * tint：填充色 uniform 名；height：符号内的相对高度表达式（-0.5 底 .. 0.5 顶）。
+ * tint：填充色 uniform 名；height：符号内的相对高度表达式（-0.5 底 .. 0.5 顶）；line：线稿颜色 uniform 名（不给就用默认的深蓝灰）。
  */
-export function recolorSymbol(fragmentShader, tint, height) {
+export function recolorSymbol(fragmentShader, tint, height, line = null) {
   return fragmentShader
     .replace('#include <map_fragment>', `#include <map_fragment>
 float symLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
 float symLine = 1.0 - smoothstep(0.03, 0.2, symLum);
 float symTop = clamp(${height} + 0.5, 0.0, 1.0);
 vec3 symFill = mix(${tint}, mix(${tint}, vec3(1.0), 0.62), smoothstep(0.2, 0.85, symTop));
-vec3 symColor = mix(symFill, vec3(0.08, 0.13, 0.26), symLine);
+vec3 symColor = mix(symFill, ${line ?? `vec3(${SYMBOL_LINE.join(', ')})`}, symLine);
 symColor = mix(symColor, vec3(1.0), smoothstep(0.7, 0.95, symLum) * (1.0 - symLine));
 float symAlpha = diffuseColor.a * mix(0.82, 0.95, symLine);`)
     .replace('#include <opaque_fragment>', `outgoingLight = symColor;
