@@ -1,10 +1,9 @@
 import * as THREE from 'three';
-import { uniforms } from '../rig/uniforms.js';
 import { CheekSpring } from '../rig/springs.js';
 
 /**
  * 交互共享状态：输入（input.js）写，拉扯物理（pull.js）和表情（expression/）读。
- * 坐标都是参考坐标（见 rig/calibration.js）。
+ * 坐标、位移都在脸部坐标里（见 rig/faceFrame.js，半脸宽 = 1）。
  */
 export function createInteractionState({ actions, defaultAction, behavior }) {
   const mode = defaultAction ?? 'off';
@@ -12,17 +11,17 @@ export function createInteractionState({ actions, defaultAction, behavior }) {
     mode, // 当前工具：poke / single / double / cup / off（音游中或没有可用工具）
     modeBeforeRhythm: mode,
     behavior, // 角色的反应节奏（personality.behavior）
-    // 幅度上限（相对脸宽），来自角色配置 personality.actions
+    // 幅度上限（半脸宽的倍数），来自角色配置 personality.actions
     limits: {
-      single: actions.single?.limit ?? 0.075,
-      double: actions.double?.limit ?? 0.048,
-      cup: actions.cup?.push ?? 0.035,
-      rhythm: actions.rhythm?.limit ?? 0.12,
+      single: actions.single?.limit ?? 0.2,
+      double: actions.double?.limit ?? 0.13,
+      cup: actions.cup?.push ?? 0.09,
+      rhythm: actions.rhythm?.limit ?? 0.28,
     },
 
     // --- 拉扯 / 捧脸 ---
-    grab: uniforms.uGrab.value, // 抓取中心
-    delta: uniforms.uDelta.value, // 当前拉扯位移
+    grab: new THREE.Vector3(), // 抓取中心（捧脸时是按下的位置）
+    delta: new THREE.Vector3(), // 当前拉扯位移
     target: new THREE.Vector3(), // 指针对应的目标位移
     vel: new THREE.Vector3(),
     pullSides: 0, // 0 捧脸 / 1 单手 / 2 双手（松手后保留，用于回弹）
@@ -39,9 +38,6 @@ export function createInteractionState({ actions, defaultAction, behavior }) {
     dragPlane: new THREE.Plane(),
     dragStart: new THREE.Vector3(),
 
-    // 回弹后的脸颊抖动
-    jiggle: { armed: false, amp: 0, t: Infinity, left: false, right: false },
-    releaseDir: new THREE.Vector3(),
     blushHold: { x: 0, y: 0 },
 
     // --- 戳 ---

@@ -20,7 +20,7 @@ export default function daniyaExpressions(p, add) {
   add('browDown', p.blink * 0.14); // 眨眼时眉毛跟着压一点
 
   // 被托住：嘴被挤成小小的"嘟"，眼睛微微睁大、眉毛轻抬；拉扯时嘴型再被扯开一些
-  // （参考站菲比用 1.25 / .65 / .88；达妮娅的嘴型幅度更大，超过 ~0.85 牙齿会从嘴角露出来）
+  // （达妮娅的嘴型幅度大，mouthNarrow 超过 ~0.85 牙齿会从嘴角露出来）
   add('mouthNarrow', 0.8 * p.es.mouth * (1 - 0.72 * h));
   add('mouthCornerDown', 0.45 * p.es.mouth * (1 - 0.93 * h) * (1 - p.enjoy));
   add('mouthForward', 0.5 * p.es.mouth * (1 - 0.5 * h));

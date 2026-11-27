@@ -9,13 +9,23 @@ export default {
   bytes: 12_400_000, // 服务器不给 content-length 时，用它估算加载进度
 
   /*
-   * 模型坐标 ↔ 参考坐标：model.x = ref.x * sx, model.y = ref.y + dy, model.z = ref.z + dz
-   * 依据：嘴 16.99→16.49、鼻尖 17.26→16.74、眼 17.51→17.02、睫毛外缘 0.813→0.755
+   * 脸部标志点（模型绑定姿态坐标），形变、点击区域都按它们建立的脸部坐标系来算（见 src/rig/faceFrame.js）。
+   * 量法：脸部皮肤材质的顶点里，鼻尖 = x≈0 处 z 最大的点；半宽 = 脸颊高度处 |x| 最大值；
+   * 下眼睑 = 眼白材质的最低处；脸颊 = 嘴角和下眼睑之间、肉最鼓的地方；前发 = 前发材质贴近脸颊的位置
    */
-  calibration: { sx: 0.89, dy: -0.49, dz: 0.02, faceWidth: 2.142 },
+  face: {
+    halfWidth: 0.93,
+    mouthY: 16.49,
+    eyeY: 17.02,
+    lidY: 16.92,
+    noseZ: 0.624,
+    cheek: [0.45, 16.64, 0.35],
+    hair: [0.64, 16.7, 0.2],
+    pokeFade: [16.7, 16.88], // 戳凹在这段高度里淡出，到下眼睑之前就停（眼周皮肤基本不动）
+  },
 
-  /** 前发避让：不推发丝时拉到约 0.12 脸颊开始碰到发丝（单手上限 ≈0.16，音游 ≈0.26） */
-  hairAvoid: { slack: 0.11, knee: 0.03, follow: 0.8 },
+  /** 前发避让：脸颊在前发处被顶出去超过 slack（半脸宽）才推开发丝 */
+  hairAvoid: { slack: 0.01, knee: 0.015, follow: 1.1 },
 
   /** 镜头取景（模型坐标）：wide = 半身全景，close = 脸部特写 */
   camera: {
@@ -32,7 +42,9 @@ export default {
   materials: {
     skin: ['face1', 'Cheek'], // 拉 + 戳 + 泛红
     hitTest: ['face1'], // 点击检测只看这些材质
-    mouth: ['kou1', 'she1'], // 口腔、舌头：只跟随戳
+    mouth: ['kou1', 'she1'], // 口腔、舌头：跟皮肤一起形变
+    // 贴在脸上的独立材质（眼白、瞳孔、睫毛、眉毛、鼻子、脸上的线条）：跟皮肤用同一个形变场，免得皮肤动了它们露出来
+    followPoke: ['Eye1-bai', 'MI_Eye1', 'MI_Eye1+hi2', 'MI_Eye1+hi2+', 'bai11', 'jie1', 'mei1', 'zhou1', 'nose1', 'emo1'],
     hairOnCheek: ['前发', '前发+'], // 垂在脸颊前的发丝：快穿模时被推开
     symbol: 'emo3', // 漫画符号贴片（汗滴、乱线）
     noOutline: ['face1', 'Cheek', 'kou1', 'she1', 'emo1', 'emo3'], // 会变形或是贴纸的材质不画描边

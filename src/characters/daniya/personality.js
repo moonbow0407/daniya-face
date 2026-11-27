@@ -8,14 +8,14 @@ import honeyLemon from '../../rhythm/charts/honeyLemon.js';
 export default {
   /*
    * 开放的动作，按这里的顺序出现在右侧工具栏；不写的动作不出现。
-   * limit / push 是相对脸宽的幅度上限（参考站的数值）。
+   * limit / push 是幅度上限，单位是半脸宽（model.face.halfWidth）。
    */
   actions: {
-    cup: { label: '捧脸', push: 0.035 },
+    cup: { label: '捧脸', push: 0.09 },
     poke: { label: '戳脸' },
-    single: { label: '单手拉脸', limit: 0.075 },
-    double: { label: '双手拉脸', limit: 0.048 },
-    rhythm: { label: '音游', song: honeyLemon, limit: 0.12, hint: '点按 / 空格 = 戳脸 · 长按 = Wink 拉脸' },
+    single: { label: '单手拉脸', limit: 0.2 },
+    double: { label: '双手拉脸', limit: 0.13 },
+    rhythm: { label: '音游', song: honeyLemon, limit: 0.28, hint: '点按 / 空格 = 戳脸 · 长按 = Wink 拉脸' },
   },
   defaultAction: 'poke',
 

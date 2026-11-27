@@ -3,7 +3,7 @@
  * 目录：
  *   characters/  角色配置：model 模型层 / personality 性格层 / presentation 呈现层
  *   core/        渲染舞台、加载、模型准备、骨骼姿势
- *   rig/         脸颊形变（参考坐标、uniform、着色器、弹簧、点击检测、漫画符号）
+ *   rig/         脸颊形变（脸部坐标系、弹性位移场、uniform、着色器、弹簧、点击检测、漫画符号）
  *   interaction/ 输入、交互状态、拉扯物理
  *   expression/  情绪信号、表情驱动、头部动作、眨眼（表情表本身在角色的 personality 里）
  *   rhythm/      音游（判定、界面、播放器、谱面）
@@ -16,7 +16,7 @@ import { createLoadingScreen, applyCharacterText, loadModel, loadAmmo } from './
 import { prepareModel } from './core/model.js';
 import { setupPose } from './core/pose.js';
 import { configureRig, uniforms } from './rig/uniforms.js';
-import { calib } from './rig/calibration.js';
+import { frame as faceFrame } from './rig/faceFrame.js';
 import { PokeField } from './rig/springs.js';
 import { createInteractionState } from './interaction/state.js';
 import { createInput } from './interaction/input.js';
@@ -152,11 +152,11 @@ requestAnimationFrame(frame);
 
 // 调试用（控制台 window.__face）
 window.__face = {
-  cfg, mesh, uniforms, calib, pokes, bone: pose.bone, zoom: stage.zoom, uvMorphs: model.uvMorphs, sfx, debug,
+  cfg, mesh, uniforms, faceFrame, pokes, bone: pose.bone, zoom: stage.zoom, uvMorphs: model.uvMorphs, sfx, debug,
   renderer: stage.renderer, outline: stage.outline, scene: stage.scene, camera: stage.camera, rhythm, hitFace: input.hitFace,
   /** 手动推进 n 帧（每帧 dt 秒），用于在后台标签页里做可重复的检查 */
   step(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) step(dt); },
-  get state() { return { holdId: s.holdId, pullSides: s.pullSides, pulling: s.pulling, mode: s.mode, delta: s.delta.length(), target: s.target.length() / calib.faceWidth }; },
+  get state() { return { holdId: s.holdId, pullSides: s.pullSides, pulling: s.pulling, mode: s.mode, delta: s.delta.length(), target: s.target.length() }; },
 };
 window[`__${cfg.id}`] = window.__face;
 

@@ -1,12 +1,10 @@
 import * as THREE from 'three';
-import { toRef, fromRef } from '../rig/calibration.js';
-import { addCheekMobility } from '../rig/uniforms.js';
+import { frame, toFrame, fromFrame } from '../rig/faceFrame.js';
+import { addSoftWeights } from '../rig/uniforms.js';
 import { patchMaterial, patchOutlineMaterial } from '../rig/cheekShaders.js';
 import { FaceHit } from '../rig/faceHit.js';
 import { makeMorphsRelative, UvMorphs, setupSymbol } from '../rig/symbols.js';
 
-/** 音游的"脸颊点"（参考坐标，参考站同款）：音游轨道从这里出发，音游中点哪里都当成点在这 */
-const RHYTHM_POINT_REF = new THREE.Vector3(0.47, 17.15, 0.34);
 
 /**
  * 加载完模型后的准备：表情转相对偏移、UV 表情、给各材质打形变补丁、点击检测、音游脸颊点。
@@ -24,11 +22,11 @@ export function prepareModel({ mesh, uvMorphData, scene, materials }) {
   if (symbolMat) setupSymbol(symbolMat);
 
   const has = (list, name) => list?.includes(name);
-  addCheekMobility(geo);
+  addSoftWeights(geo);
   for (const m of mesh.material) {
     if (has(materials.skin, m.name)) patchMaterial(m, 'face');
-    // 口腔，以及眼睛、睫毛这类独立材质：只跟随戳，免得脸颊被戳凹时它们从皮肤后面露出来
-    else if (has(materials.mouth, m.name) || has(materials.followPoke, m.name)) patchMaterial(m, 'mouth');
+    // 口腔，以及眼睛、睫毛这类独立材质：跟皮肤用同一个形变场，免得被戳凹、拉开时从皮肤后面露出来
+    else if (has(materials.mouth, m.name) || has(materials.followPoke, m.name)) patchMaterial(m, 'follow');
     else if (has(materials.hairOnCheek, m.name)) patchMaterial(m, 'hair');
     // 描边走的是独立着色器，不会跟着脸颊变形 → 脸部和贴纸不画描边
     if (has(materials.noOutline, m.name) && m.userData.outlineParameters) m.userData.outlineParameters.visible = false;
@@ -36,7 +34,8 @@ export function prepareModel({ mesh, uvMorphData, scene, materials }) {
   patchHairOutlines(scene, mesh, materials.hairOnCheek ?? []);
 
   const faceHit = new FaceHit(mesh, materials.hitTest);
-  const rhythmVertex = nearestVertex(mesh, materials.hitTest[0], fromRef(RHYTHM_POINT_REF));
+  // 音游的"脸颊点"：右脸颊肉最鼓处。音游轨道从这里出发，音游中点哪里都当成点在这
+  const rhythmVertex = nearestVertex(mesh, materials.hitTest[0], fromFrame(frame.cheek));
   const _rv = new THREE.Vector3();
 
   return {
@@ -50,7 +49,8 @@ export function prepareModel({ mesh, uvMorphData, scene, materials }) {
     /** 音游里的"命中"：不看点在哪，统一当作点在脸颊点 */
     rhythmHit() {
       const local = new THREE.Vector3().fromBufferAttribute(geo.attributes.position, rhythmVertex);
-      return { point: this.rhythmPoint().clone(), local, ref: toRef(local) };
+      const normal = new THREE.Vector3().fromBufferAttribute(geo.attributes.normal, rhythmVertex);
+      return { point: this.rhythmPoint().clone(), local, normal, ref: toFrame(local) };
     },
   };
 }

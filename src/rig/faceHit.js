@@ -9,7 +9,7 @@ const _tri = new THREE.Triangle();
 
 /**
  * 只对指定材质（脸部皮肤）做射线检测；考虑蒙皮与表情。
- * 返回世界坐标命中点 + 绑定姿态（未蒙皮）下的对应点。
+ * 返回世界坐标命中点 + 绑定姿态（未蒙皮）下的对应点和表面法线。
  */
 export class FaceHit {
   constructor(mesh, materialNames) {
@@ -23,6 +23,7 @@ export class FaceHit {
     }
     this.tris = Uint32Array.from(tris);
     this.base = geo.attributes.position;
+    this.normal = geo.attributes.normal;
   }
 
   raycast(ray) {
@@ -42,10 +43,14 @@ export class FaceHit {
       best = { point: p.clone(), tri: [tris[i], tris[i + 1], tris[i + 2]], bary: _bary.clone() };
     }
     if (!best) return null;
-    const local = new THREE.Vector3();
+    const local = new THREE.Vector3(), normal = new THREE.Vector3();
     const w = [best.bary.x, best.bary.y, best.bary.z];
-    best.tri.forEach((v, k) => local.addScaledVector(_a.fromBufferAttribute(this.base, v), w[k]));
+    best.tri.forEach((v, k) => {
+      local.addScaledVector(_a.fromBufferAttribute(this.base, v), w[k]);
+      normal.addScaledVector(_a.fromBufferAttribute(this.normal, v), w[k]);
+    });
     best.local = local;
+    best.normal = normal.normalize();
     return best;
   }
 }
