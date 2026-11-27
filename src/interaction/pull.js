@@ -1,64 +1,76 @@
 import * as THREE from 'three';
 import { uniforms, hairAvoid } from '../rig/uniforms.js';
-import { frame, fleshMask } from '../rig/faceFrame.js';
-import { kelvinlet, KERNELS } from '../rig/kelvinlet.js';
-import { springStep, springStepVec } from '../rig/springs.js';
+import { oscStep } from '../rig/springs.js';
 
 const { smoothstep, damp } = THREE.MathUtils;
 
-// 幅度都在脸部坐标里（半脸宽 = 1）；拉扯上限在角色配置 personality.actions 里（s.limits）
-export const RHYTHM_HOLD = 0.82; // 音游长按不拖动时，自动拉开到上限的这个比例
+/*
+ * 幅度都在脸部坐标里（半脸宽 = 1）；拉扯上限在角色配置 personality.actions 里（s.limits）。
+ * FACE = 整张脸宽（拉扯程度、余振强度按它的比例算）
+ */
+export const FACE = 2.05;
+export const RHYTHM_HOLD = Math.tanh(1.15); // 音游长按不拖动时，自动拉开到上限的这个比例
 
 export function pullLimit(s, rhythmActive) {
   return s.pullSides === 2 ? s.limits.double : rhythmActive ? s.limits.rhythm : s.limits.single;
 }
 
-const ZERO = new THREE.Vector3();
-const _v = new THREE.Vector3();
-const _r = new THREE.Vector3();
-const _d = new THREE.Vector3();
-const wobble = [0, 0], wobbleV = [0, 0];
+/*
+ * 拉扯位移 → 着色器里的弹性场。场源比手指捏住的地方更深、更靠下颌（这样带动的是脸颊外侧一整团肉，
+ * 而不是表面一小块）；捏起来的肉还会往前提。这几个数是对照旧版手感拟合出来的。
+ */
+const FIELD = { x: 0.3928, y: -0.0099, z: -0.4724, gain: 1.0395, lift: 0.3905 };
+const GRAB_TOP = 0.0215; // 抓取高度的上限（和 input.js 的 grabCheek 一致），场源跟着抓取高度上下移
+
+const _p = new THREE.Vector3();
 
 /**
- * 每帧：拉扯位移的弹簧（按住跟手、松手欠阻尼弹回）、弹回时脸颊肉的余振、捧脸托起与揉脸、
+ * 每帧：拉扯位移的弹簧（按住跟手、松手带过冲弹回）、弹回时脸颊肉的余振、捧脸托起与揉脸、
  * 前发避让、拉久了脸红。返回本帧的拉扯程度 r（0..1）。
  */
 export function updatePull(s, { dt, now, rhythmActive, sfx }) {
-  const { delta, vel, target, grab } = s;
+  const { delta, vel, target, grab, jiggle } = s;
   const holding = s.holdId !== null;
   const e = Math.min(dt, 0.033);
-  const out = _v.set(Math.sign(grab.x) || 1, 0, 0); // 被拉那侧的"往外"
 
-  if (holding) springStepVec(delta, vel, target, 40, 0.9, e); // 跟手：硬、几乎不过冲
-  else if (s.pullSides) {
-    const before = delta.dot(out);
-    springStepVec(delta, vel, ZERO, 20, 0.2, e); // 松手：像橡皮筋一样弹回，冲过头再晃几下
-    // 弹回中心的一瞬间，被拉的肉团"啵"地抖一下（速度越快抖得越厉害）
-    if (before > 0 && delta.dot(out) <= 0) {
-      const kick = Math.min(1.2, 0.32 * vel.length());
-      for (const side of [0, 1]) if (s.pullSides === 2 || (grab.x < 0 ? 0 : 1) === side) wobbleV[side] -= kick;
+  if (!holding && s.pullSides) {
+    // 松手：欠阻尼弹回（衰减 6.2/s，21 rad/s）
+    const before = _p.copy(delta);
+    for (const k of ['x', 'y', 'z']) [delta[k], vel[k]] = oscStep(before[k], vel[k], 6.2, 21, e);
+    if (jiggle.armed && delta.dot(s.releaseDir) <= 0) {
+      // 弹回中心的一瞬间，脸颊肉再"啵"地抖一下（速度越快抖得越厉害）
+      jiggle.armed = false;
+      jiggle.left = s.pullSides === 2 || grab.x < 0;
+      jiggle.right = s.pullSides === 2 || grab.x > 0;
+      jiggle.amp = Math.min(1, vel.length() / (FACE * 0.85));
+      jiggle.t = 0;
     }
-    // 脸颊往里有骨头挡着：往里冲过头的那部分按一半弹回来
-    if (s.pullSides && delta.dot(out) < -0.02) {
-      const over = delta.dot(out) + 0.02;
-      delta.addScaledVector(out, -over * 1.5);
-      const vin = vel.dot(out);
-      if (vin < 0) vel.addScaledVector(out, -1.5 * vin);
-    }
-  } else springStepVec(delta, vel, target, 18, 0.5, e); // 捧着时推一推
-  delta.clampLength(0, s.pullSides === 0 ? s.limits.cup : pullLimit(s, rhythmActive));
+  } else {
+    // 按住（以及捧脸推一推）：跟手的弹簧
+    const k = holding ? 180 : 65;
+    vel.addScaledVector(_p.copy(target).sub(delta), k * e).multiplyScalar(Math.exp(-(holding ? 20 : 10) * e));
+    delta.addScaledVector(vel, e);
+  }
+  if (s.pullSides) {
+    // 脸颊往里有骨头挡着：冲过中心就反弹回来（损失一半）
+    const f = holding ? 0 : -0.56;
+    if (delta.x * grab.x < 0) { delta.x *= f; vel.x *= f; }
+    if (delta.z < 0) { delta.z *= f; vel.z *= f; }
+  }
+  const limit = pullLimit(s, rhythmActive);
+  delta.clampLength(0, s.pullSides === 0 ? s.limits.cup : limit);
 
-  for (const side of [0, 1]) [wobble[side], wobbleV[side]] = springStep(wobble[side], wobbleV[side], 0, 34, 0.16, e);
-  uniforms.uWobble.value.set(wobble[0], wobble[1]);
+  jiggle.t += dt;
+  const w = jiggle.t < 1 ? jiggle.amp * Math.exp(-5.6 * jiggle.t) * Math.sin(24 * jiggle.t) : 0;
+  uniforms.uWobble.value.set(jiggle.left ? w : 0, jiggle.right ? w : 0);
 
   writeField(s);
-  updateHair();
+  updateHair(s);
   updateCup(s, { dt, e, now, sfx });
 
   // 拉扯程度 → 表情强度
-  const limit = pullLimit(s, rhythmActive);
-  const r = holding && s.pullSides ? smoothstep(delta.length(), 0.008, limit) : 0;
-  if (holding && s.pullSides && !rhythmActive) sfx.pullMove(r, target.y / limit, dt); // 竖直位置用手的目标位置（不等弹簧），和原版一致
+  const r = holding && s.pullSides ? smoothstep(delta.length() / FACE, 0.004, limit / FACE) : 0;
+  if (holding && s.pullSides && !rhythmActive) sfx.pullMove(r, target.y / limit, dt);
   updateBlush(s, { dt, now, r });
   s.pullAmount = damp(s.pullAmount, r, holding ? (rhythmActive ? 28 : 22) : 14, dt);
   return r;
@@ -69,36 +81,31 @@ function writeField(s) {
   const [g0, g1] = uniforms.uGrab.value, [p0, p1] = uniforms.uPull.value;
   p0.set(0, 0, 0); p1.set(0, 0, 0); uniforms.uPush.value.set(0, 0, 0);
   if (s.pullSides === 0) { uniforms.uPushAt.value.copy(s.grab); uniforms.uPush.value.copy(s.delta); return; }
-  // 捏起来的肉会离开脸面一点：拉得越开，越往前提
-  _d.copy(s.delta); _d.z += 0.2 * Math.hypot(s.delta.x, s.delta.y);
-  const right = s.grab.x >= 0;
-  const [g, p] = right ? [g1, p1] : [g0, p0];
-  g.copy(s.grab); p.copy(_d);
-  if (s.pullSides === 2) {
-    const [gm, pm] = right ? [g0, p0] : [g1, p1];
-    gm.set(-s.grab.x, s.grab.y, s.grab.z); pm.set(-_d.x, _d.y, _d.z);
-  }
+  const sx = s.grab.x >= 0 ? 1 : -1, d = s.delta;
+  const gy = FIELD.y + Math.min(0, s.grab.y - GRAB_TOP);
+  const set = (side, mirror) => {
+    const g = side ? g1 : g0, p = side ? p1 : p0;
+    const m = mirror ? -1 : 1;
+    g.set((side ? 1 : -1) * FIELD.x, gy, FIELD.z);
+    p.set(m * d.x * FIELD.gain, d.y * FIELD.gain, d.z * FIELD.gain + FIELD.lift * Math.max(0, d.x * sx));
+  };
+  set(sx > 0 ? 1 : 0, false);
+  if (s.pullSides === 2) set(sx > 0 ? 0 : 1, true);
 }
 
 /*
- * 前发避让：在前发贴着脸颊的那一点，用和着色器同一个公式算出脸颊被顶出去多少。
- * 发丝和脸颊之间本来有一点空隙：没超过这段余量（slack）时发丝不动，超过后经过一段柔和的过渡（knee），
- * 只跟随超出的部分。只横向 + 往前，不上下拉长发丝。
+ * 前发避让：发丝和脸颊之间本来有一点空隙。往外拉的量没超过这段余量（slack）时发丝不动，
+ * 超过后经过一段柔和的过渡（knee）才开始跟随，而且只跟随超出的部分；只横向 + 略往前，不上下拉长发丝。
  */
-function updateHair() {
+function updateHair(s) {
   const { slack, knee, follow } = hairAvoid;
+  const sx = s.grab.x >= 0 ? 1 : -1;
   for (const side of [0, 1]) {
-    const sx = side ? 1 : -1;
-    const h = _r.set(sx * frame.hair.x, frame.hair.y, frame.hair.z);
-    const m = fleshMask(h);
-    const disp = kelvinlet(_r.sub(uniforms.uGrab.value[side]), uniforms.uPull.value[side], ...KERNELS.pull, _d).multiplyScalar(m);
-    disp.y = 0;
-    const push = Math.max(0, disp.x * sx * 0.85 + disp.z * 0.5);
-    const t = push - slack, k = Math.max(knee, 1e-4);
-    const excess = t <= -k ? 0 : t >= k ? t : ((t + k) * (t + k)) / (4 * k);
     const hair = uniforms.uHair.value[side];
-    if (excess <= 0 || push <= 0) hair.set(0, 0, 0);
-    else hair.copy(disp).multiplyScalar((follow * excess) / push);
+    const on = s.pullSides === 2 || (s.pullSides === 1 && (side ? 1 : -1) === sx);
+    const t = (on ? Math.max(0, s.delta.x * sx) : 0) - slack, k = Math.max(knee, 1e-4);
+    const ex = t <= -k ? 0 : t >= k ? t : ((t + k) * (t + k)) / (4 * k);
+    hair.set((side ? 1 : -1) * ex * follow, 0, ex * 0.337);
   }
 }
 

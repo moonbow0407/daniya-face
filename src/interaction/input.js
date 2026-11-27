@@ -1,10 +1,23 @@
 import * as THREE from 'three';
-import { frame, toFrame, vecToFrame, clickMask } from '../rig/faceFrame.js';
+import { toFrame, vecToFrame } from '../rig/faceFrame.js';
 import { ZOOM_MIN, ZOOM_MAX } from '../core/stage.js';
-import { RHYTHM_HOLD, pullLimit } from './pull.js';
+import { RHYTHM_HOLD, FACE, pullLimit } from './pull.js';
 
 const { clamp, smoothstep } = THREE.MathUtils;
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
+
+/*
+ * 交互范围（脸部坐标，半脸宽 = 1）
+ *   CLICK：能点的区域；NOSE：鼻梁正中这么宽不响应戳
+ *   POKE：戳的落点限制在脸颊肉上；GRAB：拉脸时手指捏住的位置（左右对称，高度随点击位置在范围内变）
+ *   RUBBER：手指拖动量 → 拉扯量的橡皮筋尺度（拖得越远越拉不动）
+ */
+const CLICK = { x: 1.082, y: [-0.355, 0.516], z: -0.746 };
+const NOSE = 0.153;
+const POKE = { x: [0.287, 0.785], y: [-0.118, 0.344] };
+const GRAB = { x: 0.527, y: [-0.1075, 0.0215], z: -0.391 };
+const RUBBER = { pull: 0.236, rhythm: 0.205, cup: 0.287 };
+const RHYTHM_BASE = 0.236; // 音游长按的基础自动拉力
 const RHYTHM_KEYS = new Set(['Space', 'KeyD', 'KeyF', 'KeyJ', 'KeyK']);
 
 /**
@@ -29,15 +42,14 @@ export function createInput(ctx) {
     const hit = model.faceHit.raycast(rayFrom(e));
     if (!hit) return null;
     const ref = toFrame(hit.local);
-    // 只接受软组织上（和形变用同一个遮罩），太靠边、太靠眼睛的地方不算
-    if (clickMask(ref) < 0.3) return null;
+    // 只接受脸颊附近
+    if (Math.abs(ref.x) > CLICK.x || ref.y < CLICK.y[0] || ref.y > CLICK.y[1] || ref.z < CLICK.z) return null;
     return { ...hit, ref };
   }
 
-  /** 戳一下：沿落点的表面法线按进去；点在眼睛附近时，落点挪到下眼睑下方的脸颊上 */
+  /** 戳一下：落点限制在脸颊肉上（点在眼睛附近、太靠边时挪进来），沿表面法线按进去 */
   function poke({ ref, normal }, strength) {
-    const top = frame.pokeFade[0] + 0.04;
-    if (ref.y > top) ref = ref.clone().setY(top);
+    ref = new THREE.Vector3((Math.sign(ref.x) || 1) * clamp(Math.abs(ref.x), ...POKE.x), clamp(ref.y, ...POKE.y), ref.z);
     const now = performance.now();
     s.pokeCombo = now - s.lastPokeAt < 700 ? s.pokeCombo + 1 : 1;
     s.lastPokeAt = now;
@@ -45,11 +57,8 @@ export function createInput(ctx) {
     s.pokeUntil = now + 550;
     pokes.tap(ref, normal ?? Z_AXIS, strength);
   }
-  /** 拉脸：手指捏住的是一团肉，抓取点往脸颊肉最厚的地方靠 */
-  const grabCheek = ({ x, y, z }) => {
-    const c = frame.cheek, sx = x < 0 ? -1 : 1;
-    s.grab.set(sx * (0.6 * c.x + 0.4 * Math.abs(x)), clamp(0.6 * c.y + 0.4 * y, c.y - 0.12, c.y + 0.1), 0.6 * c.z + 0.4 * z);
-  };
+  /** 拉脸：抓取点固定在脸颊肉上，只取高度 */
+  const grabCheek = ({ x, y }) => s.grab.set(x < 0 ? -GRAB.x : GRAB.x, clamp(y, ...GRAB.y), GRAB.z);
   const rhythmHoldTarget = () => s.target.set(Math.sign(s.grab.x) * s.limits.rhythm * RHYTHM_HOLD, 0, 0);
 
   /** 音游点按的动作（角色配置 actions.rhythm.tap）：'poke' 戳（默认）/ 'single' 单手捏一下；长按总是单手拉住 */
@@ -58,15 +67,17 @@ export function createInput(ctx) {
 
   /**
    * 捏一下：不按住，给被捏的一侧一个向外的速度，靠松手的弹簧自己弹回；表情借用戳的短反应（音游里交互音效静音，只有打击音）。
-   * 峰值约 0.07 半脸宽：前发那里被顶出去的量不超过 hairAvoid.slack，前发就不会跟着一进一出地闪
+   * 冲量控制在峰值约 3.5% 脸宽，不超过前发的余量（hairAvoid.slack），否则前发会跟着一进一出地闪；
+   * 也不叠加松手的"啵"抖动（速度太快，脸颊会在发丝前后来回穿）
    */
   function pinchTap(ref) {
     if (s.holdId !== null) return;
     s.pullSides = 1;
     grabCheek(ref);
     const sx = Math.sign(s.grab.x);
-    s.delta.set(0, 0, 0);
-    s.vel.set(sx * 1.75, 0, 0);
+    s.releaseDir.set(sx, 0, 0);
+    s.vel.set(sx * FACE * 1.1, 0, 0);
+    s.jiggle.armed = false;
     s.pokeUntil = performance.now() + 550;
     s.roll = Math.random();
   }
@@ -99,13 +110,14 @@ export function createInput(ctx) {
       if (!rh.playing) return;
       act = rh.press(e);
       if (act !== 'single') touchRing(e);
-      if (!act) { poke(hit, 0.5); return; }
+      if (!act) { pokes.tap(hit.ref.clone(), hit.normal ?? Z_AXIS, 0.55); return; }
       act = rhythmAct(act);
       if (act === 'pinch') { pinchTap(hit.ref); return; }
     }
 
     if (act === 'poke') {
-      poke(hit, rh.active ? 1.4 : 1);
+      if (Math.abs(x) < NOSE && !rh.active) return; // 鼻梁正中不算
+      poke(hit, rh.active ? 1.5 : 1);
       sfx.poke(x < 0 ? -1 : 1); // x<0 是角色右脸 = 画面左侧
       return;
     }
@@ -116,6 +128,7 @@ export function createInput(ctx) {
     s.pullSides = act === 'cup' ? 0 : act === 'single' ? 1 : 2;
     s.cupHeld = act === 'cup';
     if (s.cupHeld) { sfx.cupPress(); s.cupTime = 0; s.rubEnergy = 0; s.rubLevel = 0; s.lastRubPx.set(e.clientX, e.clientY); }
+    s.jiggle.armed = false;
     // 音游里的长按：一按下就算在拉（不等拖动），也不出彩蛋；清掉上一记戳脸的残留表情
     s.pulling = rh.active; s.egg = null;
     if (rh.active) s.pokeUntil = -Infinity;
@@ -156,7 +169,7 @@ export function createInput(ctx) {
       s.lastRubPx.set(e.clientX, e.clientY);
       target.y *= 0.55;
       const a = target.length(), limit = s.limits.cup;
-      if (a > 0) target.multiplyScalar((limit * Math.tanh(a / (2.5 * limit))) / a);
+      if (a > 0) target.multiplyScalar((limit * Math.tanh(a / RUBBER.cup)) / a);
       return;
     }
     const px = Math.hypot(e.clientX - s.pressPx.x, e.clientY - s.pressPx.y);
@@ -169,7 +182,7 @@ export function createInput(ctx) {
     target.y *= rh.active ? 1.12 : 0.65;
     if (rh.active) target.x += sx * Math.abs(target.y) * 0.36;
     target.multiplyScalar(smoothstep(px, 3, 8)); // 几像素的死区，防手抖
-    if (rh.active) target.x += sx * 0.7 * s.limits.rhythm; // 音游长按叠加基础自动拉力，避免微抖把目标清零
+    if (rh.active) target.x += sx * RHYTHM_BASE; // 音游长按叠加基础自动拉力，避免微抖把目标清零
     const a = target.length();
     const limit = pullLimit(s, rh.active);
     if (a > 1e-4 && !s.pulling) {
@@ -178,7 +191,7 @@ export function createInput(ctx) {
       s.egg = list.length && Math.random() < chance ? list[Math.floor(Math.random() * list.length)] : null;
       if (s.egg) sfx.drip(0.16);
     }
-    if (a > 0) target.multiplyScalar((limit * Math.tanh(a / ((rh.active ? 0.85 : 1.5) * limit))) / a); // 橡皮筋：越拉越紧，到上限为止
+    if (a > 0) target.multiplyScalar((limit * Math.tanh(a / (rh.active ? RUBBER.rhythm : RUBBER.pull))) / a); // 橡皮筋：越拉越紧，到上限为止
   });
 
   /** 结束按住（松手，或音游里长按被判失败时强制结束）。ok = 正常抬起 */
@@ -201,10 +214,16 @@ export function createInput(ctx) {
     stageEl.dataset.cursor = '';
     if (s.pullSides) sfx.pullRelease(ok);
     if (ok && s.pulling && s.pullSides) {
-      // 轻轻一拉就松手：弹簧本身弹得很小，额外给一点往回的速度，也能"啵"一下
-      const d = s.delta.length();
-      const n = smoothstep(d, 0, 0.02) * (1 - smoothstep(d, 0.04, 0.1));
-      if (n > 0) s.vel.addScaledVector(_p.copy(s.delta).normalize(), -1.6 * n);
+      // 准备松手后的抖动；轻轻一拉就松手时，额外给一个"弹"的冲量
+      const v = s.delta.lengthSq() > s.target.lengthSq() ? s.delta : s.target;
+      const t = v.length() / FACE;
+      s.jiggle.armed = t > 0.002;
+      s.releaseDir.copy(v).normalize();
+      const n = smoothstep(t, 0, 0.009) * (1 - smoothstep(t, 0.016, 0.052));
+      if (n > 0) {
+        const r = 0.72 * FACE * n;
+        s.vel.addScaledVector(s.releaseDir, Math.min(0, -r - s.vel.dot(s.releaseDir)));
+      }
     }
     s.holdStart = null; s.pulling = false; s.egg = null;
     s.target.set(0, 0, 0);
@@ -236,14 +255,15 @@ export function createInput(ctx) {
     sfx.ensureContext();
     const hit = model.rhythmHit();
     const pressed = rh.press(e);
-    if (!pressed) { poke(hit, 0.5); return; }
+    if (!pressed) { pokes.tap(hit.ref.clone(), hit.normal ?? Z_AXIS, 0.55); return; }
     const act = rhythmAct(pressed);
-    if (act === 'poke') { poke(hit, 1.4); return; }
+    if (act === 'poke') { poke(hit, 1.5); return; }
     if (act === 'pinch') { pinchTap(hit.ref); return; }
     s.keyHoldCode = e.code;
     s.holdId = 'key';
     s.pullSides = 1;
     s.cupHeld = false;
+    s.jiggle.armed = false;
     s.pulling = true; s.egg = null;
     s.pokeUntil = -Infinity;
     grabCheek(hit.ref);

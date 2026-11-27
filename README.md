@@ -44,7 +44,7 @@ npm run build
 
 - Vite + three.js 0.170（MMDLoader 读 PMX 模型，OutlineEffect 描边）
 - 脸颊形变全在 GPU 着色器里（`src/rig/`）：戳、拉、捧都是同一个弹性位移场（双尺度正则化 Kelvinlet）的叠加，乘上软组织遮罩（鼻梁、眼睛、耳前钉住）；松手和回弹是 CPU 上的阻尼弹簧。垂在脸颊前的前发在脸颊快顶到时整段让开
-- 所有形变、点击区域都在"脸部坐标系"里算：由角色自己的几个标志点（嘴角、眼睛、鼻尖、半脸宽、脸颊、前发位置，见 `model.face`）定义，换模型只需重新量这几个点
+- 所有形变、点击区域都在"脸部坐标系"里算：由角色自己的几个标志点（嘴角高度、鼻尖、半脸宽、脸颊点，见 `model.face`）定义。各动作的形变范围、幅度和弹簧手感按上一版逐顶点拟合，效果保持一致
 - 表情 = 模型自带的表情 morph 组合：引擎算通用的情绪信号（`src/expression/signals.js`），达妮娅的表情表（`src/characters/daniya/expressions.js`）把信号换成表情；漫画符号是 UV 表情（MMDLoader 不支持，`src/rig/symbols.js` 自己实现）
 - 开放哪些动作、界面配色都由角色配置决定：工具栏按 `personality.actions` 生成，配色是 `presentation.theme` 写入的 CSS 变量
 - 头发的静止姿势是离线跑一次物理烘焙出来的（`hairRest.json`），运行时不开物理，不穿模、不飘

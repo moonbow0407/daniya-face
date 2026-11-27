@@ -11,11 +11,11 @@ export default {
    * limit / push 是幅度上限，单位是半脸宽（model.face.halfWidth）。
    */
   actions: {
-    cup: { label: '捧脸', push: 0.09 },
+    cup: { label: '捧脸', push: 0.072 },
     poke: { label: '戳脸' },
-    single: { label: '单手拉脸', limit: 0.2 },
-    double: { label: '双手拉脸', limit: 0.13 },
-    rhythm: { label: '音游', song: honeyLemon, limit: 0.28, hint: '点按 / 空格 = 戳脸 · 长按 = Wink 拉脸' },
+    single: { label: '单手拉脸', limit: 0.154 },
+    double: { label: '双手拉脸', limit: 0.098 },
+    rhythm: { label: '音游', song: honeyLemon, limit: 0.246, hint: '点按 / 空格 = 戳脸 · 长按 = Wink 拉脸' },
   },
   defaultAction: 'poke',
 

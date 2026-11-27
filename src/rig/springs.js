@@ -3,55 +3,42 @@ import { uniforms, POKE_SLOTS } from './uniforms.js';
 
 /* 脸部的几种弹簧：捧脸托起、戳脸、眨眼节奏（纯 CPU 逻辑，结果写进 uniform 或返回数值） */
 
-const SUB = 1 / 240; // 积分步长：固定小步长，帧率高低手感一致
-
-/** 阻尼弹簧（半隐式欧拉，固定小步长）。w = 角频率，z = 阻尼比（<1 会过冲、来回晃） */
-export function springStep(x, v, target, w, z, dt) {
-  const n = Math.max(1, Math.ceil(dt / SUB)), h = dt / n;
-  for (let i = 0; i < n; i++) {
-    v += (w * w * (target - x) - 2 * z * w * v) * h;
-    x += v * h;
-  }
-  return [x, v];
+/**
+ * 欠阻尼振子精确推进一步（围绕 0 振荡）：a = 衰减率，wd = 振荡角频率。
+ * 用解析解而不是数值积分，帧率高低结果都一样。返回 [位移, 速度]
+ */
+export function oscStep(x0, v0, a, wd, dt) {
+  const e = Math.exp(-a * dt), c = Math.cos(wd * dt), s = Math.sin(wd * dt) / wd;
+  return [e * ((c + a * s) * x0 + s * v0), e * ((c - a * s) * v0 - (wd * wd + a * a) * s * x0)];
 }
 
-/** 同上，三维向量版（原地修改 x、v） */
-export function springStepVec(x, v, target, w, z, dt) {
-  const n = Math.max(1, Math.ceil(dt / SUB)), h = dt / n;
-  for (let i = 0; i < n; i++) {
-    v.x += (w * w * (target.x - x.x) - 2 * z * w * v.x) * h;
-    v.y += (w * w * (target.y - x.y) - 2 * z * w * v.y) * h;
-    v.z += (w * w * (target.z - x.z) - 2 * z * w * v.z) * h;
-    x.addScaledVector(v, h);
-  }
-}
-
-/** 捧脸的托起弹簧：按住时快速托起（略过冲），松手后软软落回 */
+/** 捧脸的托起弹簧：按住时快速托起（带一点过冲），松手后软软落回 */
 export class CheekSpring {
   constructor() { this.value = 0; this.velocity = 0; }
   update(dt, held) {
     const target = held ? 1 : 0;
-    [this.value, this.velocity] = springStep(this.value, this.velocity, target, held ? 19 : 14, held ? 0.45 : 0.42, dt);
+    const w = held ? 20 : 16, zeta = held ? 0.48 : 0.55;
+    const [x, v] = oscStep(this.value - target, this.velocity, zeta * w, w * Math.sqrt(1 - zeta * zeta), dt);
+    this.value = target + x; this.velocity = v;
     if (Math.abs(this.value - target) < 5e-4 && Math.abs(this.velocity) < 0.01) { this.value = target; this.velocity = 0; }
     return this.value;
   }
 }
 
 /*
- * 戳脸：每侧 2 个槽位。一次点击 = 指尖按住约 70ms（硬弹簧跟到目标深度），
- * 松开后换成软弹簧弹回——欠阻尼，会冲过头往外鼓一下再落定。深度单位是半脸宽。
+ * 戳脸：每侧 2 个槽位。一次点击 = 给落点一个冲量，之后自由振荡回去：
+ * 先按进去，再冲过头往外鼓，来回几下停住。w 是"按进去的程度"（冲量单位，着色器里再换成位移）
  */
-const PRESS_TIME = 0.07;
-const DEPTH = 0.065, DEPTH_MAX = 0.11;
+const KICK = 4.8, KICK_MAX = 6; // 每次点击的冲量、单个坑的速度上限（× strength）
+const DECAY = 4.6, FREQ = 22; // 衰减率、振荡角频率
+const SAME_SPOT = 0.1; // 落点离已有的坑这么近（脸部坐标）就叠在同一个坑上
 
 export class PokeField {
   constructor() {
     this.points = uniforms.uPokes.value;
     this.normals = uniforms.uPokeN.value;
     this.velocity = new Float64Array(POKE_SLOTS);
-    this.target = new Float64Array(POKE_SLOTS);
-    this.press = new Float64Array(POKE_SLOTS);
-    this.reactions = [0, 0]; // 被戳的一侧"吃痛"程度（跟着坑的深度走）
+    this.reactions = [0, 0]; // 被戳的一侧"吃痛"程度（跟着坑的深浅走）
     this.smiles = [0, 0]; // 戳完之后那侧嘴角上扬
     this.smileDrive = [0, 0];
   }
@@ -60,37 +47,33 @@ export class PokeField {
   tap(p, n, strength = 1) {
     const side = p.x < 0 ? 0 : 1;
     this.smileDrive[side] = Math.min(1, this.smileDrive[side] + 0.85);
-    // 同一侧：落点很近就叠在同一个坑上，否则用空槽，没有空槽就挤掉较浅的那个
-    const a = side * (POKE_SLOTS / 2), b = a + 1;
-    const near = (i) => this.points[i].w !== 0 && (this.points[i].x - p.x) ** 2 + (this.points[i].y - p.y) ** 2 < 0.12 ** 2;
-    const free = (i) => this.points[i].w === 0 && this.velocity[i] === 0;
-    const slot = near(a) ? a : near(b) ? b : free(a) ? a : free(b) ? b : Math.abs(this.points[a].w) < Math.abs(this.points[b].w) ? a : b;
-    const pt = this.points[slot];
-    if (!near(slot)) { pt.set(p.x, p.y, p.z, 0); this.velocity[slot] = 0; }
-    this.normals[slot].copy(n).normalize();
-    this.target[slot] = Math.min(DEPTH_MAX, Math.max(0, pt.w) * 0.5 + DEPTH * strength);
-    this.press[slot] = PRESS_TIME;
+    const start = side * (POKE_SLOTS / 2);
+    let nearest = start, best = Infinity, free = -1;
+    for (let h = start; h < start + POKE_SLOTS / 2; h++) {
+      const u = this.points[h];
+      if (!u.w && !this.velocity[h]) { free = h; continue; }
+      const d = (u.x - p.x) ** 2 + (u.y - p.y) ** 2 + (u.z - p.z) ** 2;
+      if (d < best) { best = d; nearest = h; }
+    }
+    const slot = best < SAME_SPOT ** 2 || free < 0 ? nearest : free;
+    if (slot === free) { this.points[slot].set(p.x, p.y, p.z, 0); this.normals[slot].copy(n).normalize(); }
+    this.velocity[slot] = Math.min(KICK_MAX * strength, this.velocity[slot] + KICK * strength);
   }
 
   update(dt) {
-    for (let i = 0; i < POKE_SLOTS; i++) {
-      const pt = this.points[i];
-      if (!pt.w && !this.velocity[i] && this.press[i] <= 0) continue;
-      const pressing = this.press[i] > 0;
-      this.press[i] -= dt;
-      [pt.w, this.velocity[i]] = pressing
-        ? springStep(pt.w, this.velocity[i], this.target[i], 70, 0.85, dt)
-        : springStep(pt.w, this.velocity[i], 0, 24, 0.24, dt);
-      if (!pressing && Math.abs(pt.w) < 2e-4 && Math.abs(this.velocity[i]) < 0.004) { pt.w = 0; this.velocity[i] = 0; }
-    }
+    this.points.forEach((a, i) => {
+      if (!a.w && !this.velocity[i]) return;
+      [a.w, this.velocity[i]] = oscStep(a.w, this.velocity[i], DECAY, FREQ, dt);
+      if (Math.abs(a.w) < 25e-5 && Math.abs(this.velocity[i]) < 0.008) { a.w = 0; this.velocity[i] = 0; }
+    });
     for (let side = 0; side < 2; side++) {
       const drive = this.smileDrive[side];
       this.smiles[side] += (drive - this.smiles[side]) * (1 - Math.exp(-11 * dt));
       this.smileDrive[side] *= Math.exp(-3.4 * dt);
       if (drive < 0.001 && this.smiles[side] < 0.001) this.smiles[side] = this.smileDrive[side] = 0;
       const o = side * (POKE_SLOTS / 2);
-      const depth = Math.max(Math.abs(this.points[o].w), Math.abs(this.points[o + 1].w));
-      const target = Math.min(1, depth / (0.6 * DEPTH));
+      const amp = Math.max(Math.abs(this.points[o].w), Math.abs(this.points[o + 1].w));
+      const target = Math.min(1, amp * 7);
       this.reactions[side] += (target - this.reactions[side]) * (1 - Math.exp(-(target > this.reactions[side] ? 23 : 10) * dt));
       if (!target && this.reactions[side] < 0.001) this.reactions[side] = 0;
     }

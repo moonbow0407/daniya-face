@@ -13,10 +13,10 @@ export function createInteractionState({ actions, defaultAction, behavior }) {
     behavior, // 角色的反应节奏（personality.behavior）
     // 幅度上限（半脸宽的倍数），来自角色配置 personality.actions
     limits: {
-      single: actions.single?.limit ?? 0.2,
-      double: actions.double?.limit ?? 0.13,
-      cup: actions.cup?.push ?? 0.09,
-      rhythm: actions.rhythm?.limit ?? 0.28,
+      single: actions.single?.limit ?? 0.154,
+      double: actions.double?.limit ?? 0.098,
+      cup: actions.cup?.push ?? 0.072,
+      rhythm: actions.rhythm?.limit ?? 0.246,
     },
 
     // --- 拉扯 / 捧脸 ---
@@ -39,6 +39,10 @@ export function createInteractionState({ actions, defaultAction, behavior }) {
     dragStart: new THREE.Vector3(),
 
     blushHold: { x: 0, y: 0 },
+
+    // 回弹后的脸颊抖动
+    jiggle: { armed: false, amp: 0, t: Infinity, left: false, right: false },
+    releaseDir: new THREE.Vector3(),
 
     // --- 戳 ---
     pokeUntil: -Infinity, // 戳完 550ms 内是"被戳"表情

@@ -152,7 +152,7 @@ requestAnimationFrame(frame);
 
 // 调试用（控制台 window.__face）
 window.__face = {
-  cfg, mesh, uniforms, faceFrame, pokes, bone: pose.bone, zoom: stage.zoom, uvMorphs: model.uvMorphs, sfx, debug,
+  cfg, mesh, uniforms, faceFrame, pokes, s, bone: pose.bone, zoom: stage.zoom, uvMorphs: model.uvMorphs, sfx, debug,
   renderer: stage.renderer, outline: stage.outline, scene: stage.scene, camera: stage.camera, rhythm, hitFace: input.hitFace,
   /** 手动推进 n 帧（每帧 dt 秒），用于在后台标签页里做可重复的检查 */
   step(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) step(dt); },
